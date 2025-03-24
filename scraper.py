@@ -7,19 +7,28 @@ import pandas as pd
 
 # Set up headless Chrome options
 chrome_options = Options()
-chrome_options.add_argument("--headless")  # Run headless (without UI)
-chrome_options.add_argument("--disable-gpu")  # Disable GPU acceleration (optional)
-chrome_options.add_argument("--no-sandbox")  # Avoid issues on some systems
-chrome_options.add_argument("--disable-software-rasterizer")  # Disable software rasterizer
-chrome_options.add_argument("--remote-debugging-port=9222")  # Open debugging port (optional)
-# Disable /dev/shm usage to reduce memory consumption
-chrome_options.add_argument("--disable-dev-shm-usage")
-chrome_options.add_argument("--window-size=1280x1024")  # Set a fixed window size for headless mode
+
+# chrome_options.add_argument("--headless=new")  # Improved headless support
+chrome_options.add_argument("--disable-gpu")  # Disable GPU acceleration (macOS-specific issue)
+chrome_options.add_argument("--no-sandbox")  # Bypass sandbox issues
+chrome_options.add_argument("--disable-dev-shm-usage")  # Avoid memory overflow errors
+chrome_options.add_argument("--window-size=1280,1024")  # Ensure screen dimensions
+chrome_options.add_argument("--remote-debugging-port=9222")  # Debugging info
+chrome_options.add_argument(
+    "--disable-features=NetworkService,NetworkServiceInProcess")  # Helps on macOS
+chrome_options.add_argument("--disable-software-rasterizer")  # Force CPU rasterizer
+chrome_options.add_argument("--enable-logging")  # Enable verbose logs
+chrome_options.add_argument("--log-level=0")  # Max log level for diagnostics
+# chrome_options.add_argument("--disable-headless")
 
 # Create the service object for ChromeDriver
-service = Service(ChromeDriverManager().install())
+# service = Service(ChromeDriverManager().install())
 
 # Initialize the WebDriver with the correct service and options
+# driver = webdriver.Chrome(service=service, options=chrome_options)
+
+# Force installation of the closest compatible driver
+service = Service(ChromeDriverManager(driver_version="134.0.6998.165").install())
 driver = webdriver.Chrome(service=service, options=chrome_options)
 
 
@@ -31,6 +40,8 @@ def scrape_table(url):
         # Wait for page to load (adjust the timeout as needed)
         driver.implicitly_wait(10)  # Wait for up to 10 seconds
 
+        x = driver.find_element(By.CLASS_NAME, "info_LD8Ql")
+
         # Find the table
         # table = driver.find_element(By.TAG_NAME, 'table_c5ftk')
         table = driver.find_element(By.CLASS_NAME, 'table_c5ftk')
@@ -41,6 +52,7 @@ def scrape_table(url):
         # Extract headers
         headers = table.find_elements(By.TAG_NAME, 'th')
         table_headers = [header.text.strip() for header in headers]
+        print(table_headers)
 
         # Extract rows
         rows = []
@@ -49,7 +61,7 @@ def scrape_table(url):
             cells = row.find_elements(By.TAG_NAME, 'td')
             row_data = [cell.text.strip() for cell in cells]
             if row_data:
-                rows.append(row_data)
+                rows.append(row_data[0])
 
         # find the release date, if present
         for i in range(len(table_headers)):
@@ -57,8 +69,10 @@ def scrape_table(url):
                 release_date = rows[i]
                 print(f'release date: {release_date}')
 
+        print(rows)
+
         # Create DataFrame
-        return pd.DataFrame(rows, columns=table_headers) if table_headers else pd.DataFrame(rows)
+        return pd.DataFrame([rows], columns=table_headers) if table_headers else pd.DataFrame(rows)
 
     except Exception as e:
         print(f"Error scraping {url}: {e}")
