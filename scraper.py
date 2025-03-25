@@ -8,6 +8,8 @@ from selenium.webdriver.chrome.service import Service
 import pandas as pd
 import sys
 import signal
+from dateutil import parser
+import datetime
 
 
 def signal_handler(sig, frame):
@@ -65,7 +67,6 @@ def scrape_table(url):
         # Extract headers
         headers = table.find_elements(By.TAG_NAME, 'th')
         table_headers = [header.text.strip() for header in headers]
-        print(table_headers)
 
         # Extract rows
         rows = []
@@ -75,14 +76,6 @@ def scrape_table(url):
             row_data = [cell.text.strip() for cell in cells]
             if row_data:
                 rows.append(row_data[0])
-
-        # find the release date, if present
-        for i in range(len(table_headers)):
-            if table_headers[i] == 'Released:':
-                release_date = rows[i]
-                print(f'release date: {release_date}')
-
-        print(rows)
 
         # Create DataFrame
         return pd.DataFrame([rows], columns=table_headers) if table_headers else pd.DataFrame(rows)
@@ -104,13 +97,48 @@ urls = [
 def main():
 
     # Loop through URLs and scrape tables
-    for url in urls:
-        df = scrape_table(url)
-        if df is not None:
-            print(f"Data from {url}:")
-            print(df.head())
-            # Save to CSV if needed
-            df.to_csv(f"output_{url.split('/')[-1]}.csv", index=False)
+
+    release_url = 'https://www.discogs.com/release/24393-Depeche-Mode-Just-Cant-Get-Enough-Schizo-Mix'
+    master_url = 'https://www.discogs.com/master/17710-Depeche-Mode-Just-Cant-Get-Enough'
+
+    release_date_object = None
+    master_date_object = None
+
+    # scrape the release first
+    print(release_url.split('/')[-1])
+    df = scrape_table(release_url)
+    if df is not None:
+        # Save to CSV if needed
+        df.to_csv(f"output_{release_url.split('/')[-1]}.csv", index=False)
+
+        try:
+            release_date_str = df.at[0, 'Released:']
+            release_datetime_object = parser.parse(release_date_str)
+            release_date_object = release_datetime_object.date()
+        except Exception as e:
+            print(f"No release date on release")
+            release_date_object = None
+        finally:
+            if release_date_object:
+                print(f'release date: {release_date_object.strftime('%A %d %B %Y')}')
+
+    # scrape the master release next
+    print(master_url.split('/')[-1])
+    df = scrape_table(master_url)
+    if df is not None:
+        # Save to CSV if needed
+        df.to_csv(f"output_{master_url.split('/')[-1]}.csv", index=False)
+
+        try:
+            master_date_str = df.at[0, 'Released:']
+            master_datetime_object = parser.parse(master_date_str)
+            master_date_object = master_datetime_object.date()
+        except Exception as e:
+            print(f"no release date found on master release")
+            master_date_object = None
+        finally:
+            if master_date_object:
+                print(f'master release date: {master_date_object.strftime('%A %d %B %Y')}')
 
 
 if __name__ == "__main__":
