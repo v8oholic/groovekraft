@@ -431,36 +431,97 @@ def trim_if_ends_with_number_in_brackets(s):
 
 
 def humanize_date_delta(dt1, dt2=datetime.datetime.today().date()):
+    date_formats = ['%Y-%m-%d', '%Y-%m', '%Y']
+    settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first'}
 
-    if isinstance(dt1, str):
-        dt1 = datetime.datetime.strptime(dt1, "%Y-%m-%d").date()
+    dt2 = datetime.date.today().strftime('%Y-%m-%d')
+    dt2_object = dateparser.parse(dt2, date_formats=date_formats, settings=settings)
+    dt1_object = dateparser.parse(dt1, date_formats=date_formats, settings=settings)
 
-    rd = dateutil.relativedelta.relativedelta(dt2, dt1)
+    rd = dateutil.relativedelta.relativedelta(dt2_object, dt1_object)
 
-    x = []
+    if len(dt1) == 4:
+        # just the year
+        x = []
 
-    if rd.years == 1:
-        x.append(f'{rd.years} year')
-    elif rd.years > 1:
-        x.append(f'{rd.years} years')
+        if rd.years == 1:
+            x.append(f'{rd.years} year')
+        elif rd.years > 1:
+            x.append(f'{rd.years} years')
 
-    if rd.months == 1:
-        x.append(f'{rd.months} month')
-    elif rd.months > 1:
-        x.append(f'{rd.months} months')
+        if rd.months == 1:
+            x.append(f'{rd.months} month')
+        elif rd.months > 1:
+            x.append(f'{rd.months} months')
 
-    if rd.days == 1:
-        x.append(f'{rd.days} day')
-    elif rd.days > 1:
-        x.append(f'{rd.days} days')
+        if rd.days == 1:
+            x.append(f'{rd.days} day')
+        elif rd.days > 1:
+            x.append(f'{rd.days} days')
 
-    xl = len(x)
-    if xl == 1:
-        xd = x[0]
+        xl = len(x)
+        if xl == 1:
+            xd = x[0]
+        else:
+            x2 = x.pop()
+            xd = ', '.join(x)
+            xd += ' and ' + x2
+
+        xd += ' ago this year'
+
+    elif len(dt1) == 7:
+        # just the year and month
+
+        x = []
+
+        if rd.years == 1:
+            x.append(f'{rd.years} year')
+        elif rd.years > 1:
+            x.append(f'{rd.years} years')
+
+        if rd.months == 1:
+            x.append(f'{rd.months} month')
+        elif rd.months > 1:
+            x.append(f'{rd.months} months')
+
+        xl = len(x)
+        if xl == 1:
+            xd = x[0]
+        else:
+            x2 = x.pop()
+            xd = ', '.join(x)
+            xd += ' and ' + x2
+
+        xd += ' ago this month'
+
     else:
-        x2 = x.pop()
-        xd = ', '.join(x)
-        xd += ' and ' + x2
+
+        x = []
+
+        if rd.years == 1:
+            x.append(f'{rd.years} year')
+        elif rd.years > 1:
+            x.append(f'{rd.years} years')
+
+        if rd.months == 1:
+            x.append(f'{rd.months} month')
+        elif rd.months > 1:
+            x.append(f'{rd.months} months')
+
+        if rd.days == 1:
+            x.append(f'{rd.days} day')
+        elif rd.days > 1:
+            x.append(f'{rd.days} days')
+
+        xl = len(x)
+        if xl == 1:
+            xd = x[0]
+        else:
+            x2 = x.pop()
+            xd = ', '.join(x)
+            xd += ' and ' + x2
+
+        xd += ' ago'
 
     return xd
 
@@ -706,18 +767,52 @@ def db_update_sort_name(release_id, sort_name):
 
 
 def db_update_release_date(release_id, release_date):
-    release_date = release_date.strftime('%Y-%m-%d')
+    # release_date = release_date.strftime('%Y-%m-%d')
     with sqlite3.connect(DATABASE) as db:
         cur = db.cursor()
-        cur.execute('UPDATE items SET mb_title = ? WHERE release_id = ?',
+        cur.execute('UPDATE items SET release_date = ? WHERE release_id = ?',
                     (release_date, release_id))
         db.commit()
+
+
+def db_fetch_row_by_discogs_id(discogs_id):
+
+    with sqlite3.connect(DATABASE) as db:
+        if NAMED_TUPLES:
+            db.row_factory = namedtuple_factory
+        else:
+            db.row_factory = sqlite3.Row
+
+        cur = db.cursor()
+        cur.execute('SELECT * FROM items WHERE release_id = ?', (int(discogs_id),))
+        row = cur.fetchone()
+
+    return row
+
+
+def db_fetch_row_by_mb_id(mb_id):
+
+    with sqlite3.connect(DATABASE) as db:
+        if NAMED_TUPLES:
+            db.row_factory = namedtuple_factory
+        else:
+            db.row_factory = sqlite3.Row
+
+        cur = db.cursor()
+        cur.execute('SELECT * FROM items WHERE mb_id = ?', (mb_id,))
+        row = cur.fetchone()
+
+    return row
 
 
 def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None):
 
     if not discogs_release and discogs_id:
         discogs_release = discogs_client.release(discogs_id)
+
+    # if db_fetch_row_by_discogs_id(discogs_id):
+    #     print(f'skipping {row.release_id} {row.artist} {row.title} {row.year} {row.release_date}')
+    #     return
 
     discogs_master = discogs_release.master
 
@@ -762,6 +857,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         artist_name = 'Various Artists'
 
     release_title = discogs_release.title
+    release_date = None
 
     # try just artist and catalogue number(s) first
     mb_release = mb_find_release(
@@ -804,15 +900,16 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         mb_release = mb_find_release(
             artist_name, catno=label_catnos, primary_type=primary_type, country=mb_country)
 
-    with sqlite3.connect(DATABASE) as db:
-        if NAMED_TUPLES:
-            db.row_factory = namedtuple_factory
-        else:
-            db.row_factory = sqlite3.Row
+    if not mb_release:
+        # last ditch attempt to find the release group, and the first release date field
+        mb_release_group = mb_get_release_group(
+            artist=artist_name, title=release_title, primary_type=primary_type)
+        if mb_release_group:
+            first_release_date = mb_release_group.get('first-release-date')
+            if first_release_date:
+                release_date = earliest_date(release_date, first_release_date)
 
-        cur = db.cursor()
-        cur.execute('SELECT * FROM items WHERE release_id = ?', (discogs_release.id,))
-        row = cur.fetchone()
+    row = db_fetch_row_by_discogs_id(discogs_release.id)
 
     if row is None and not mb_release:
         # no row exists yet, but no MB release matched - just create a simplified row
@@ -824,26 +921,23 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
                 db.row_factory = sqlite3.Row
 
             db.execute("""
-                INSERT INTO items (artist, title, format, year, release_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO items (artist, title, format, year, release_date, release_id)
+                VALUES (?, ?, ?, ?, ?, ?)
             """,
-                       (artist_name, release_title, discogs_release.formats[0]['name'], year, discogs_release.id))
+                       (artist_name, release_title, discogs_release.formats[0]['name'], year, release_date, discogs_release.id))
             db.commit()
             db.close()
 
             return
 
+    if row is not None and release_date and row.release_date != release_date:
+        print(f'updating release date {row.release_id} {row.release_date}->{release_date}')
+        db_update_release_date(discogs_release.id, release_date)
+
     if mb_release is None:
         return
 
-    release_date = None
-
-    temp_date_str = mb_release.get('date')
-    if temp_date_str:
-        temp_date = parse_date(temp_date_str)
-        if temp_date:
-            if release_date == None or temp_date < release_date:
-                release_date = temp_date
+    release_date = earliest_date(mb_release.get('date'), None)
 
     # reload the release, including the release group information, artists etc
     mb_release_details = musicbrainzngs.get_release_by_id(
@@ -853,12 +947,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     if mb_release:
         mb_release_group = mb_release.get('release-group')
         if mb_release_group:
-            first_release_date = mb_release_group.get('first-release-date')
-            if first_release_date:
-                temp_date = parse_date(first_release_date)
-                if temp_date:
-                    if release_date == None or temp_date < release_date:
-                        release_date = temp_date
+            release_date = earliest_date(release_date, mb_release_group.get('first-release-date'))
 
     if row is not None:
         # row already exists, just update any out of date items
@@ -891,7 +980,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             db_update_sort_name(release_id, mb_title)
 
         # if row.release_date != mb_release.get('date'):
-        if release_date and row.release_date != release_date.strftime('%Y-%m-%d'):
+        if release_date and row.release_date != release_date:
             print(f'updating release date {row.release_id} {row.release_date}->{release_date}')
             db_update_release_date(release_id, release_date)
 
@@ -920,16 +1009,15 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     with sqlite3.connect(DATABASE) as db2:
         cur2 = db2.cursor()
         cur2.execute("""
-        INSERT INTO items (artist, title, format, year, release_id, release_date, date_locked, mb_id, mb_artist, mb_title)
+        INSERT INTO items (artist, title, format, year, release_id, release_date, mb_id, mb_artist, mb_title, sort_name)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-                     (artist_name, release_title, discogs_release.formats[0]['name'], year, discogs_release.id, release_date, False, mb_id, mb_artist, mb_title))
+                     (artist_name, release_title, discogs_release.formats[0]['name'], year, discogs_release.id, release_date, mb_id, mb_artist, mb_title, mb_sort_name))
         db2.commit()
         db.close()
 
 
-def import_from_discogs():
-    SCRAPER = False
+def import_from_discogs(discogs_id=None):
 
     musicbrainz.set_useragent(USER_AGENT, '0.1', 'steve.powell@outlook.com')
 
@@ -965,22 +1053,38 @@ def import_from_discogs():
     print(f"    * oauth_token_secret = {discogs_access_secret}")
     print(" Authentication complete. Future requests will be signed with the above tokens.")
 
-    folder = discogs_user.collection_folders[0]
+    if discogs_id:
+        row = db_fetch_row_by_discogs_id(discogs_id)
+        if row is not None:
+            print(f'skipping {row.release_id} {row.artist} {row.title} {row.year} {row.release_date}')
+        else:
+            print(f'importing Discogs id {discogs_id}')
+            update_row(discogs_client, discogs_id=int(discogs_id))
 
-    print(f'number of items in all collections: {len(folder.releases)}')
+    else:
+        folder = discogs_user.collection_folders[0]
 
-    for discogs_item in discogs_user.collection_folders[0].releases:
+        print(f'number of items in all collections: {len(folder.releases)}')
 
-        update_row(discogs_client, discogs_item.release)
+        for discogs_item in discogs_user.collection_folders[0].releases:
+            row = db_fetch_row_by_discogs_id(discogs_id)
+            if row is not None:
+                print(
+                    f'skipping {row.release_id} {row.artist} {row.title} {row.year} {row.release_date}')
+            else:
+                print(f'importing Discogs id {discogs_id}')
+                update_row(discogs_client, discogs_item.release)
 
 
 def open_db():
+    """Create database"""
+
     with sqlite3.connect(DATABASE) as db:
         res = db.execute("SELECT name FROM sqlite_master WHERE name='items'")
     if res.fetchone() is None:
         print("creating table")
         db.execute(
-            "CREATE TABLE items(artist, title, format, year, release_id, release_date, mb_id, mb_artist, mb_title, sort_name)")
+            "CREATE TABLE items(artist, title, format, year, release_id, release_date, release_date_len, mb_id, mb_artist, mb_title, sort_name)")
         db.execute("CREATE UNIQUE INDEX idx_items_release_id ON items(release_id)")
         db.execute(
             "CREATE UNIQUE INDEX idx_items_sort ON items(sort_name, artist, year, title, release_id)")
@@ -1031,7 +1135,7 @@ def output_row(row):
     print(f'year            : {row.year}')
     print(f'release_id      : {row.release_id}')
     if row.release_date:
-        delta = humanize_date_delta(row.release_date) + ' ago'
+        delta = humanize_date_delta(row.release_date)
         print(f'release_date    : {row.release_date} ({delta})')
 
 
@@ -1044,10 +1148,10 @@ def update_mb_id(release_id, mb_id):
 
 
 def parse_date(date_str):
-    date_formats = ['%Y-%m-%d', '%d %b %Y', '%d %B %Y']
-    settings = {'REQUIRE_PARTS': ['day', 'month', 'year']}
+    date_formats = ['%Y-%m-%d', '%Y-%m', '%Y']
+    settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first'}
 
-    if date_str is None or len(date_str) != 10:
+    if date_str is None or date_str == '':
         return None
 
     date_object = dateparser.parse(date_str, date_formats=date_formats, settings=settings)
@@ -1055,7 +1159,7 @@ def parse_date(date_str):
     return date_object.date()
 
 
-def update_rows():
+def update_rows(discogs_id=0, mb_id=None):
 
     musicbrainz.set_useragent(USER_AGENT, '0.1', 'steve.powell@outlook.com')
 
@@ -1078,32 +1182,56 @@ def update_rows():
     discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(
         oauth_token, ouath_token_secret)
 
-    with sqlite3.connect(DATABASE) as db:
-        if NAMED_TUPLES:
-            db.row_factory = namedtuple_factory
-        else:
-            db.row_factory = sqlite3.Row
-
-        cur = db.cursor()
-
-        cur.execute("""
-            SELECT *
-            FROM items
-            WHERE mb_id IS NULL or mb_artist IS NULL or mb_title IS NULL or sort_name IS NULL
-            ORDER BY artist, year, title, release_id
-        """)
-
-        rows = cur.fetchall()
-
-        print(f'{len(rows)} rows')
-
-        for row in rows:
-
+    if discogs_id:
+        row = db_fetch_row_by_discogs_id(discogs_id)
+        if row is not None:
             print()
             output_row(row)
             print()
 
-            update_row(discogs_client, discogs_id=row.release_id)
+            update_row(discogs_client, discogs_id=row.release_id, mb_id=mb_id)
+        else:
+            print(f'discogs_id {discogs_id} not found')
+
+    elif mb_id:
+        row = db_fetch_row_by_mb_id(mb_id)
+        if row is not None:
+            print()
+            output_row(row)
+            print()
+
+            update_row(discogs_client, discogs_id=row.release_id, mb_id=mb_id)
+        else:
+            print(f'MBID {mb_id} not found')
+
+    else:
+
+        with sqlite3.connect(DATABASE) as db:
+            if NAMED_TUPLES:
+                db.row_factory = namedtuple_factory
+            else:
+                db.row_factory = sqlite3.Row
+
+            cur = db.cursor()
+
+            cur.execute("""
+                SELECT *
+                FROM items
+                WHERE mb_id IS NULL or mb_artist IS NULL or mb_title IS NULL or sort_name IS NULL
+                ORDER BY artist, year, title, release_id
+            """)
+
+            rows = cur.fetchall()
+
+            print(f'{len(rows)} rows')
+
+            for row in rows:
+
+                print()
+                output_row(row)
+                print()
+
+                update_row(discogs_client, discogs_id=row.release_id)
 
 
 def mb_get_artist(artist):
@@ -1170,7 +1298,35 @@ def mb_get_artist(artist):
     return newlist[0]
 
 
-def mb_get_release_group(artist, release):
+def earliest_date(dt1_str, dt2_str):
+    """ Return the earlier of two dates
+
+        Given two date strings, return the earlier of the two. Dates
+        can be in the form YYYY-MM-DD, YYYY-MM or simply YY. The
+        comparison takes into account partial dates, so that 1982-04
+        is not considered earlier than 1982-04-10, but would be
+        considered earlier than 1982-05
+    """
+
+    dt1_obj = parse_date(dt1_str) if dt1_str else None
+    dt2_obj = parse_date(dt2_str) if dt2_str else None
+
+    if dt1_obj is None and dt2_obj is None:
+        return
+
+    if dt1_obj is not None and dt2_obj is None:
+        return dt1_str
+
+    if dt1_obj is None and dt2_obj is not None:
+        return dt2_str
+
+    if dt1_obj < dt2_obj and len(dt1_str) >= len(dt2_str):
+        return dt1_str
+    else:
+        return dt2_str
+
+
+def mb_get_release_group(artist='', title='', primary_type=None):
     """
         Search for a release group.
 
@@ -1196,9 +1352,27 @@ def mb_get_release_group(artist, release):
         type	            legacy release group type field that predates the ability to set multiple types (see calculation code)
     """
 
-    print(
-        f'searching for release group for artist {artist} release {release}')
-    result = musicbrainzngs.search_release_groups(query=f'artist:"{artist}" AND release="{release}')
+    query_string = ''
+
+    def add_query_phrase(x):
+        nonlocal query_string
+
+        if query_string:
+            query_string += f' AND {x}'
+        else:
+            query_string = f'{x}'
+
+    if artist:
+        add_query_phrase(f'artist:"{artist}"')
+
+    if title:
+        add_query_phrase(f'release:"{title}"')
+
+    if primary_type:
+        add_query_phrase(f'primarytype:{primary_type}')
+
+    print(f'searching for release group for artist {artist} release {title}')
+    result = musicbrainzngs.search_release_groups(query=query_string)
 
     if result is None:
         return None
@@ -1208,45 +1382,28 @@ def mb_get_release_group(artist, release):
     if not release_group_list:
         return None
 
-    # print(f'found {len(release_group_list)} matches')
+    print(f'found {len(release_group_list)} release groups')
 
-    # TODO find oldest?
+    oldest_first_release_date = None
+    oldest_release_group_id = None
 
-    # for arow in release_group_list:
-    #     print(f'    id                  : {arow['id']}')
-    #     print(f'    title               : {arow['title']}')
+    for arow in release_group_list:
+        print(f'    id                  : {arow['id']}')
+        print(f'    title               : {arow['title']}')
 
-    #     first_release_date = arow.get('first-release-date')
-    #     if first_release_date:
-    #         print(f'    first_release_date  : {first_release_date}')
+        first_release_date = arow.get('first-release-date')
+        if first_release_date:
+            print(f'    first_release_date  : {first_release_date}')
+            earliest = earliest_date(oldest_first_release_date, first_release_date)
+            if earliest == first_release_date:
+                oldest_release_group_id = arow.get('id')
+                oldest_first_release_date = earliest
 
-    # match a single entry
-    release_group_index = -1
-    for index, value in enumerate(release_group_list):
-        if value['title'].casefold() == release.casefold():
-            release_group_index = index
-            break
+    if oldest_release_group_id:
+        newlist = [x for x in release_group_list if oldest_release_group_id == x.get('id')]
+        return newlist[0]
 
-        # for x in value['release-list']:
-        #     print(x)
-        #     id = x['id']
-        #     release_detail = musicbrainzngs.get_release_by_id(id)
-        #     print(release_detail)
-        #     catno = release_detail.get('catno')
-        #     print(f'catno: {catno}')
-
-    if release_group_index < 0:
-        return None
-
-    # arow = release_group_list[release_group_index]
-    # print(arow)
-    # print(f'id                  : {arow['id']}')
-    # print(f'title               : {arow['title']}')
-    # print(f'first_release_date  : {arow['first-release-date']}')
-
-    newlist = [x for x in release_group_list if release.casefold() == x['title'].casefold()]
-
-    return newlist[0]
+    return None
 
 
 def mb_match_discogs_release(release, discogs_url):
@@ -1508,19 +1665,26 @@ def on_this_day(today_str=''):
 
 def main():
     global args
+    discogs_id = None
+    mb_id = None
+
+    if args.release_id:
+        discogs_id = args.release_id
+    elif args.mbid:
+        mb_id = args.mbid
 
     open_db()
 
-    if args.init:
-        import_from_discogs()
+    if args.import_discogs:
+        import_from_discogs(discogs_id=discogs_id)
 
-    if args.random:
+    elif args.update_musicbrainz:
+        update_rows(discogs_id=discogs_id, mb_id=mb_id)
+
+    elif args.random:
         random_selection()
 
-    if args.update:
-        update_rows()
-
-    if args.onthisday:
+    elif args.onthisday:
         on_this_day()
 
 
@@ -1530,22 +1694,30 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     parser = argparse.ArgumentParser(
-        description="Discogs Collection",
-        epilog=""
+        description="Music Collection Importer",
+        epilog="Import from Discogs skips previously imported releases. Update from MusicBrainz processes only previously imported releases."
     )
 
     # autopep8: off
-    parser.add_argument('--init', required=False, action=argparse.BooleanOptionalAction, default=False, help='import from Discogs')
-    parser.add_argument('--update', required=False, action=argparse.BooleanOptionalAction, default=False, help='update out of date items')
+    parser.add_argument('--init', required=False, action='store_true', help='initialise database')
 
-    parser.add_argument('--onthisday', required=False, action=argparse.BooleanOptionalAction, default=False, help='display any release anniversaries')
+    main_group = parser.add_mutually_exclusive_group(required=False)
+    main_group.add_argument('--import-discogs', required=False, action='store_true', help='import from Discogs')
+    main_group.add_argument('--update-musicbrainz', required=False, action='store_true', help='update out of date items')
+    main_group.add_argument('--onthisday', required=False, action='store_true', help='display any release anniversaries')
+    main_group.add_argument('--random', required=False, action='store_true', help='generate random selection')
 
-    parser.add_argument('--random', required=False, action=argparse.BooleanOptionalAction, default=False, help='generate random selection')
+    id_group = parser.add_mutually_exclusive_group(required=False)
+    id_group.add_argument('--release-id', required=False, help='restrict init or update to a specific Discogs id')
+    id_group.add_argument('--mbid', required=False, help='restrict init or update to a specific MusicBrainz id')
 
     parser.add_argument('--dry-run', required=False, action="store_true", help='dry run to test filtering')
-    parser.add_argument('--verbose', required=False, action=argparse.BooleanOptionalAction, default=False, help='verbose messages')
+    parser.add_argument('--verbose', required=False, action='store_true', help='verbose messages')
     # autopep8: on
 
     args = parser.parse_args()
+
+    # args2 = vars(args)
+    # print(args2)
 
     main()
