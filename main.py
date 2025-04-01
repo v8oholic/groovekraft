@@ -2275,11 +2275,11 @@ if __name__ == "__main__":
     parser.add_argument('--init', required=False, action='store_true', help='initialise database')
 
     main_group = parser.add_mutually_exclusive_group(required=False)
-    main_group.add_argument('--import-new', required=False, action='store_true', help='import new items from Discogs')
+    main_group.add_argument('--import-new', '--new', required=False, action='store_true', help='import new items from Discogs')
     main_group.add_argument('--import-all', required=False, action='store_true', help='import all items from Discogs')
     main_group.add_argument('--update-musicbrainz', required=False, action='store_true', help='update out of date items')
     main_group.add_argument('--scrape-discogs', required=False, action='store_true', help='update release dates from Discogs website')
-    main_group.add_argument('--onthisday', required=False, action='store_true', help='display any release anniversaries')
+    main_group.add_argument('--onthisday', '--on-this-day', required=False, action='store_true', help='display any release anniversaries')
     main_group.add_argument('--random', required=False, action='store_true', help='generate random selection')
 
     id_group = parser.add_mutually_exclusive_group(required=False)
