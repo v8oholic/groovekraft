@@ -20,6 +20,7 @@ from dateutil import parser
 import datetime
 import dateparser
 import dateutil
+from contextlib import contextmanager
 
 USER_AGENT = 'v8oholic_collection_application/1.0'
 
@@ -358,6 +359,32 @@ countries = {
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C!')
     sys.exit(0)
+
+
+@contextmanager
+def db_ops(db_name):
+    """Wrapper to take care of committing and closing a database
+
+    See https://stackoverflow.com/questions/67436362/decorator-for-sqlite3/67436763
+    """
+    conn = sqlite3.connect(db_name)
+
+    if NAMED_TUPLES:
+        conn.row_factory = namedtuple_factory
+    else:
+        conn.row_factory = sqlite3.Row
+
+    try:
+        cur = conn.cursor()
+        yield cur
+    except Exception as e:
+        # do something with exception
+        conn.rollback()
+        raise e
+    else:
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def scrape_table(url):
@@ -772,95 +799,86 @@ def find_musicbrainz_by_discogs_id2(discogs_id):
 
 
 def db_update_artist(release_id, artist):
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET artist = ? WHERE release_id = ?', (artist, release_id))
-        db.commit()
 
 
 def db_update_title(release_id, title):
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET title = ? WHERE release_id = ?', (title, release_id))
-        db.commit()
 
 
 def db_update_mb_id(release_id, mb_id):
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET mb_id = ? WHERE release_id = ?', (mb_id, release_id))
-        db.commit()
 
 
 def db_update_mb_artist(release_id, mb_artist):
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET mb_artist = ? WHERE release_id = ?', (mb_artist, release_id))
-        db.commit()
 
 
 def db_update_mb_title(release_id, mb_title):
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET mb_title = ? WHERE release_id = ?', (mb_title, release_id))
-        db.commit()
 
 
 def db_update_sort_name(release_id, sort_name):
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET sort_name = ? WHERE release_id = ?', (sort_name, release_id))
-        db.commit()
 
 
 def db_update_year(release_id, year):
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET year = ? WHERE release_id = ?', (year, release_id))
-        db.commit()
 
 
 def db_update_release_date(release_id, release_date):
     # release_date = release_date.strftime('%Y-%m-%d')
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET release_date = ? WHERE release_id = ?',
                     (release_date, release_id))
-        db.commit()
 
 
 def db_update_country(release_id, country):
     # release_date = release_date.strftime('%Y-%m-%d')
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET country = ? WHERE release_id = ?', (country, release_id))
-        db.commit()
+
+
+def db_update_format(release_id, format):
+    with db_ops(DATABASE) as cur:
+        cur.execute('UPDATE items SET format = ? WHERE release_id = ?', (format, release_id))
+
+
+def db_update_mb_primary_type(release_id, mb_primary_type):
+    with db_ops(DATABASE) as cur:
+        cur.execute('UPDATE items SET mb_primary_type = ? WHERE release_id = ?',
+                    (mb_primary_type, release_id))
 
 
 def db_fetch_row_by_discogs_id(discogs_id):
 
-    with sqlite3.connect(DATABASE) as db:
-        if NAMED_TUPLES:
-            db.row_factory = namedtuple_factory
-        else:
-            db.row_factory = sqlite3.Row
-
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('SELECT * FROM items WHERE release_id = ?', (int(discogs_id),))
         row = cur.fetchone()
 
     return row
 
 
+def db_insert_row(artist=None, title=None, format=None, mb_primary_type=None, release_year=None, release_date=None, release_id=0, country=None, mb_id=None, mb_artist=None, mb_title=None, sort_name=None):
+
+    with db_ops(DATABASE) as cur:
+        cur.execute("""
+            INSERT INTO items (artist, title, format, mb_primary_type, year, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+                    (artist, title, format, mb_primary_type, release_year, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name))
+
+
 def db_get_release_date_by_discogs_id(discogs_id):
 
-    with sqlite3.connect(DATABASE) as db:
-        if NAMED_TUPLES:
-            db.row_factory = namedtuple_factory
-        else:
-            db.row_factory = sqlite3.Row
-
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('SELECT * FROM items WHERE release_id = ?', (int(discogs_id),))
         row = cur.fetchone()
 
@@ -872,13 +890,7 @@ def db_get_release_date_by_discogs_id(discogs_id):
 
 def db_fetch_row_by_mb_id(mb_id):
 
-    with sqlite3.connect(DATABASE) as db:
-        if NAMED_TUPLES:
-            db.row_factory = namedtuple_factory
-        else:
-            db.row_factory = sqlite3.Row
-
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('SELECT * FROM items WHERE mb_id = ?', (mb_id,))
         row = cur.fetchone()
 
@@ -954,6 +966,105 @@ def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
                     db_update_release_date(discogs_release.id, release_date)
 
 
+def convert_format(discogs_format):
+
+    primary_type = discogs_format.get('name')
+    quantity = discogs_format.get('qty')
+    secondary_types = discogs_format.get('descriptions')
+
+    if primary_type == 'Vinyl':
+
+        if 'EP' in secondary_types and '7"' in secondary_types:
+            format = '7" EP'
+            mb_primary_type = 'single'
+        elif 'EP' in secondary_types and '12"' in secondary_types:
+            format = '12" EP'
+            mb_primary_type = 'single'
+        elif '12"' in secondary_types:
+            format = '12" Single'
+            mb_primary_type = 'single'
+        elif '7"' in secondary_types:
+            format = '7" Single'
+            mb_primary_type = 'single'
+        elif 'LP' in secondary_types:
+            format = 'LP'
+            mb_primary_type = 'album'
+        elif 'Compilation' in secondary_types:
+            format = 'LP Compilation'
+            mb_primary_type = 'album'
+        else:
+            format = '?'
+            mb_primary_type = "?"
+
+    elif primary_type == 'CD':
+
+        if 'Single' in secondary_types:
+            format = 'CD Single'
+            mb_primary_type = 'single'
+        elif 'Mini' in secondary_types:
+            format = 'CD 3" Mini Single'
+            mb_primary_type = 'single'
+        elif 'Maxi-Single' in secondary_types:
+            format = 'CD Single'
+            mb_primary_type = 'single'
+        elif 'EP' in secondary_types:
+            format = 'CD EP'
+            mb_primary_type = 'single'
+        elif 'LP' in secondary_types:
+            format = 'CD Album'
+            mb_primary_type = 'album'
+        elif 'Album' in secondary_types:
+            format = 'CD Album'
+            mb_primary_type = 'album'
+        elif 'Mini-Album' in secondary_types:
+            format = 'CD Mini-Album'
+            mb_primary_type = 'album'
+        elif 'Compilation' in secondary_types:
+            format = 'CD Compilation'
+            mb_primary_type = 'album'
+        else:
+            format = "CD Single"
+            mb_primary_type = "single"
+
+    elif primary_type == 'Flexi-disc':
+
+        if '7"' in secondary_types:
+            format = '7" flexi-disc'
+            mb_primary_type = 'single'
+        else:
+            format = '?'
+            mb_primary_type = "?"
+
+    elif primary_type == 'Box Set':
+
+        if '12"' in secondary_types:
+            format = '12" Singles Box Set'
+            mb_primary_type = 'single'
+        elif '7"' in secondary_types:
+            format = '7" Singles Box Set'
+            mb_primary_type = 'single'
+        elif 'LP' in secondary_types:
+            format = "LP Box Set"
+            mb_primary_type = 'album'
+        elif 'EP' in secondary_types:
+            format = "EP Box Set"
+            mb_primary_type = 'single'
+        elif 'Single' in secondary_types:
+            print('CD Single Box Set')
+            mb_primary_type = 'single'
+        elif 'Maxi-Single' in secondary_types:
+            print('CD Single Box Set')
+            mb_primary_type = 'single'
+        else:
+            format = 'Box Set'
+            mb_primary_type = "Other"
+    else:
+        format = '?'
+        mb_primary_type = "?"
+
+    return format, mb_primary_type
+
+
 def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None):
 
     if not discogs_id and discogs_release:
@@ -962,9 +1073,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     if not discogs_release and discogs_id:
         discogs_release = discogs_client.release(discogs_id)
 
-    # if db_fetch_row_by_discogs_id(discogs_id):
-    #     print(f'skipping {row.release_id} {row.artist} {row.title} {row.year} {row.release_date}')
-    #     return
+    print(f'⚙️ {discogs_summarise_release(discogs_release=discogs_release)}')
 
     discogs_master = discogs_release.master
 
@@ -983,25 +1092,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         format_desc = ','.join(format.get('descriptions'))
     # formats = [x.data['name'] for x in release.formats]
 
-    discogs_formats = discogs_release.formats
-    first_format = discogs_formats[0]
-    x3 = first_format.get('descriptions')
-
-    if x3:
-        x4 = x3[0]
-    else:
-        x4 = 'album'
-
-    if x4 == '7"':
-        primary_type = 'single'
-    elif x4 == '12"':
-        primary_type = 'single'
-    elif x4 == 'LP':
-        primary_type = 'album'
-    elif x4 == 'HDCD':
-        primary_type = 'album'
-    else:
-        primary_type = x4.casefold()
+    format, mb_primary_type = convert_format(discogs_release.formats[0])
 
     # get the barcode
     barcode = None
@@ -1017,7 +1108,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     release_title = discogs_release.title
 
     mb_release_group, mb_release, release_date = mb_find_release_group_and_release(
-        artist=artist_name, title=release_title, primary_type=primary_type, discogs_id=discogs_release.id)
+        artist=artist_name, title=release_title, primary_type=mb_primary_type, discogs_id=discogs_release.id)
 
     # # initialise the release date from the row, if it exists
     # release_date = earliest_date(db_get_release_date_by_discogs_id(
@@ -1059,7 +1150,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         # try artist title catno type country
         for catno in label_catnos:
             mb_release = mb_find_release(artist=artist_name, title=release_title, discogs_id=discogs_release.id,
-                                         catno=catno, primary_type=primary_type, country=mb_country)
+                                         catno=catno, primary_type=mb_primary_type, country=mb_country)
             if mb_release:
                 break
 
@@ -1080,26 +1171,19 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
 
     row = db_fetch_row_by_discogs_id(discogs_release.id)
 
-    # print(f'!!! {db_summarise_row(row=row)}')
-
     if row is None and not mb_release:
         # no row exists yet, but no MB release matched - just create a simplified row
-        # print(f'release {artist_name} {release_title} not found!')
-        with sqlite3.connect(DATABASE) as db:
-            if NAMED_TUPLES:
-                db.row_factory = namedtuple_factory
-            else:
-                db.row_factory = sqlite3.Row
+        print(f'💾 {discogs_summarise_release(discogs_release=discogs_release)}')
+        db_insert_row(release_id=discogs_release.id,
+                      artist=artist_name,
+                      title=release_title,
+                      format=format,
+                      mb_primary_type=mb_primary_type,
+                      release_year=release_year,
+                      release_date=release_date,
+                      country=mb_country)
 
-            db.execute("""
-                INSERT INTO items (artist, title, format, year, release_date, release_id, country)
-                VALUES (?, ?, ?, ?, ?, ?, country)
-            """,
-                       (artist_name, release_title, discogs_release.formats[0]['name'], release_year, release_date, discogs_release.id), mb_country)
-            db.commit()
-            db.close()
-
-            return
+        return
 
     if row is not None:
         if artist_name and row.artist != artist_name:
@@ -1122,6 +1206,14 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             print(f'ℹ️ country {row.release_id} {row.country}->{mb_country}')
             db_update_country(discogs_release.id, mb_country)
 
+        if format and row.format != format:
+            print(f'ℹ️ format {row.release_id} {row.format}->{format}')
+            db_update_format(discogs_release.id, format)
+
+        if mb_primary_type and row.mb_primary_type != mb_primary_type:
+            print(f'ℹ️ mb_primary_type {row.release_id} {row.mb_primary_type}->{mb_primary_type}')
+            db_update_mb_primary_type(discogs_release.id, mb_primary_type)
+
     if mb_release is None:
         return
 
@@ -1140,6 +1232,8 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
 
     if row is not None:
         # row already exists, just update any out of date items
+        row = db_fetch_row_by_discogs_id(discogs_release.id)
+
         release_id = row.release_id
 
         mb_release = mb_release_details.get('release')
@@ -1168,9 +1262,9 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             print(f'ℹ️ sort_name {release_id} {row.sort_name}->{mb_sort_name}')
             db_update_sort_name(release_id, mb_sort_name)
 
-        if not row.year or row.year != release_year:
+        if not row.year or row.year != str(release_year):
             print(f'ℹ️ year {release_id} {row.year}->{release_year}')
-            db_update_year(release_id, release_year)
+            db_update_year(release_id, str(release_year))
 
         if row.release_date is None or row.release_date != release_date:
             if row.release_date is not None and len(release_date) < len(row.release_date):
@@ -1179,6 +1273,14 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             else:
                 print(f'ℹ️ release date {row.release_id} {row.release_date}->{release_date}')
                 db_update_release_date(release_id, release_date)
+
+        if format and row.format != format:
+            print(f'ℹ️ format {row.release_id} {row.format}->{format}')
+            db_update_format(discogs_release.id, format)
+
+        if mb_primary_type and row.mb_primary_type != mb_primary_type:
+            print(f'ℹ️ mb_primary_type {row.release_id} {row.mb_primary_type}->{mb_primary_type}')
+            db_update_mb_primary_type(discogs_release.id, mb_primary_type)
 
         # print(f'skipping {row.release_id} {row.artist} {row.title} {row.year} {row.release_date}')
         return
@@ -1201,19 +1303,29 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     mb_id = mb_release.get('id')
     mb_artist = mb_release.get('artist-credit-phrase')
     mb_title = mb_release.get('title')
+    mb_artist_credit = mb_release.get('artist-credit')
+    mb_artist_first = mb_artist_credit[0].get('artist')
+    mb_sort_name = mb_artist_first.get('sort-name')
+    if not mb_sort_name:
+        mb_sort_name = mb_artist
 
-    with sqlite3.connect(DATABASE) as db2:
-        cur2 = db2.cursor()
-        cur2.execute("""
-        INSERT INTO items (artist, title, format, year, release_id, release_date, mb_id, mb_artist, mb_title, sort_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-                     (artist_name, release_title, discogs_release.formats[0]['name'], release_year, discogs_release.id, release_date, mb_id, mb_artist, mb_title, mb_sort_name))
-        db2.commit()
-        db.close()
+    print(f'💾 {discogs_summarise_release(discogs_release=discogs_release)}')
+    db_insert_row(release_id=discogs_release.id,
+                  artist=artist_name,
+                  title=release_title,
+                  format=format,
+                  mb_primary_type=mb_primary_type,
+                  release_year=release_year,
+                  release_date=release_date,
+                  country=mb_country,
+                  mb_id=mb_id,
+                  mb_artist=mb_artist,
+                  mb_title=mb_title,
+                  sort_name=mb_sort_name
+                  )
 
 
-def import_from_discogs(discogs_id=None):
+def import_from_discogs(discogs_id=None, all_rows=False):
 
     musicbrainz.set_useragent(USER_AGENT, '0.1', 'steve.powell@outlook.com')
 
@@ -1250,13 +1362,16 @@ def import_from_discogs(discogs_id=None):
     print(" Authentication complete. Future requests will be signed with the above tokens.")
 
     if discogs_id:
-        row = db_fetch_row_by_discogs_id(discogs_id)
+        if all_rows:
+            update_row(discogs_client, discogs_item.release)
+            return
+
+        row = db_fetch_row_by_discogs_id(discogs_item.id)
         if row is not None:
-            print(f'skipping {row.release_id} {row.artist} {row.title} {row.year} {row.release_date}')
-        else:
-            print(
-                f'importing {discogs_summarise_release(id=discogs_id, discogs_client=discogs_client)}')
-            update_row(discogs_client, discogs_id=int(discogs_id))
+            print(f'⏭️ {db_summarise_row(row=row)}')
+            return
+
+        update_row(discogs_client, discogs_item.release)
 
     else:
         folder = discogs_user.collection_folders[0]
@@ -1264,51 +1379,43 @@ def import_from_discogs(discogs_id=None):
         print(f'number of items in all collections: {len(folder.releases)}')
 
         for discogs_item in discogs_user.collection_folders[0].releases:
-            row = db_fetch_row_by_discogs_id(discogs_item.id)
-            if row is not None and False:
-                print(
-                    f'skipping {row.release_id} {row.artist} {row.title} {row.year} {row.release_date}')
-            else:
-                print(
-                    f'importing {discogs_summarise_release(discogs_release=discogs_item.release)}')
+
+            if all_rows:
                 update_row(discogs_client, discogs_item.release)
+                continue
+
+            row = db_fetch_row_by_discogs_id(discogs_item.id)
+            if row is not None:
+                print(f'⏭️ {db_summarise_row(row=row)}')
+                continue
+
+            update_row(discogs_client, discogs_item.release)
 
 
 def open_db():
     """Create database"""
 
-    with sqlite3.connect(DATABASE) as db:
-        res = db.execute("SELECT name FROM sqlite_master WHERE name='items'")
-    if res.fetchone() is None:
-        print("creating table")
-        db.execute(
-            "CREATE TABLE items(artist, title, format, year, release_id, release_date, country, mb_id, mb_artist, mb_title, sort_name)")
-        db.execute("CREATE UNIQUE INDEX idx_items_release_id ON items(release_id)")
-        db.execute(
-            "CREATE UNIQUE INDEX idx_items_sort ON items(sort_name, artist, year, title, release_id)")
+    with db_ops(DATABASE) as cur:
+        res = cur.execute("SELECT name FROM sqlite_master WHERE name='items'")
+        if res.fetchone() is None:
+            print("creating table")
+            cur.execute(
+                "CREATE TABLE items(artist, title, format, year, release_id, release_date, country, mb_id, mb_artist, mb_title, sort_name)")
+            cur.execute("CREATE UNIQUE INDEX idx_items_release_id ON items(release_id)")
+            cur.execute(
+                "CREATE UNIQUE INDEX idx_items_sort ON items(sort_name, artist, year, title, release_id)")
     # else:
     #   cur.execute("ALTER TABLE status ADD locked NOT NULL DEFAULT 0")
         # word count, word list, words
-        # db.execute("ALTER TABLE status ADD word_count DEFAULT 0")
-        # db.execute("ALTER TABLE status DROP words_found")
-        # db.execute("ALTER TABLE status ADD transcription")
-        # db.execute("CREATE UNIQUE INDEX idx_status_primary ON status(girl, number)")
-
-    # if NAMED_TUPLES:
-    #     db.row_factory = namedtuple_factory
-    # else:
-    #     db.row_factory = sqlite3.Row
+        # cur.execute("ALTER TABLE status ADD word_count DEFAULT 0")
+        # cur.execute("ALTER TABLE status DROP words_found")
+        # cur.execute("ALTER TABLE status ADD transcription")
+        # cur.execute("CREATE UNIQUE INDEX idx_status_primary ON status(girl, number)")
 
 
 def random_selection():
 
-    with sqlite3.connect(DATABASE) as db:
-        if NAMED_TUPLES:
-            db.row_factory = namedtuple_factory
-        else:
-            db.row_factory = sqlite3.Row
-
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
 
         cur.execute("""
             SELECT *
@@ -1339,10 +1446,8 @@ def output_row(row):
 
 def update_mb_id(release_id, mb_id):
 
-    with sqlite3.connect(DATABASE) as db:
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET mb_id = ? WHERE release_id = ?', (mb_id, release_id))
-        db.commit()
 
 
 def parse_date(date_str):
@@ -1383,7 +1488,6 @@ def update_rows(discogs_id=0, mb_id=None):
     if discogs_id:
         row = db_fetch_row_by_discogs_id(discogs_id)
         if row is not None:
-            print(f'update {db_summarise_row(row=row)}')
             update_row(discogs_client, discogs_id=int(discogs_id))
         else:
             print(f'discogs_id {discogs_id} not found')
@@ -1391,34 +1495,26 @@ def update_rows(discogs_id=0, mb_id=None):
     elif mb_id:
         row = db_fetch_row_by_mb_id(mb_id)
         if row is not None:
-            print(f'update {db_summarise_row(row=row)}')
             update_row(discogs_client, discogs_id=row.release_id, mb_id=mb_id)
         else:
             print(f'MBID {mb_id} not found')
 
     else:
 
-        with sqlite3.connect(DATABASE) as db:
-            if NAMED_TUPLES:
-                db.row_factory = namedtuple_factory
-            else:
-                db.row_factory = sqlite3.Row
-
-            cur = db.cursor()
+        with db_ops(DATABASE) as cur:
 
             cur.execute("""
-                SELECT *
-                FROM items
-                WHERE mb_id IS NULL or mb_artist IS NULL or mb_title IS NULL or sort_name IS NULL or country IS NULL
-                ORDER BY artist, year, title, release_id
-            """)
+                    SELECT *
+                    FROM items
+                    WHERE mb_id IS NULL or mb_artist IS NULL or mb_title IS NULL or sort_name IS NULL or country IS NULL
+                    ORDER BY artist, year, title, release_id
+                """)
 
             rows = cur.fetchall()
 
             print(f'{len(rows)} rows')
 
             for row in rows:
-                print(f'update {db_summarise_row(row=row)}')
                 update_row(discogs_client, discogs_id=row.release_id)
 
 
@@ -1448,13 +1544,7 @@ def scrape_discogs(discogs_id=0, mb_id=None):
 
     else:
 
-        with sqlite3.connect(DATABASE) as db:
-            if NAMED_TUPLES:
-                db.row_factory = namedtuple_factory
-            else:
-                db.row_factory = sqlite3.Row
-
-            cur = db.cursor()
+        with db_ops(DATABASE) as cur:
 
             cur.execute("""
                 SELECT *
@@ -2109,13 +2199,7 @@ def mb_find_release(artist='', title='', discogs_id=0, catno=None, primary_type=
 
 def on_this_day(today_str=''):
 
-    with sqlite3.connect(DATABASE) as db:
-        if NAMED_TUPLES:
-            db.row_factory = namedtuple_factory
-        else:
-            db.row_factory = sqlite3.Row
-
-        cur = db.cursor()
+    with db_ops(DATABASE) as cur:
 
         cur.execute("""
             SELECT *
@@ -2158,8 +2242,11 @@ def main():
 
     # discogs_id = 26065033
 
-    if args.import_discogs:
-        import_from_discogs(discogs_id=discogs_id)
+    if args.import_new:
+        import_from_discogs(discogs_id=discogs_id, all_rows=False)
+
+    elif args.import_all:
+        import_from_discogs(discogs_id=discogs_id, all_rows=True)
 
     elif args.update_musicbrainz:
         update_rows(discogs_id=discogs_id, mb_id=mb_id)
@@ -2188,7 +2275,8 @@ if __name__ == "__main__":
     parser.add_argument('--init', required=False, action='store_true', help='initialise database')
 
     main_group = parser.add_mutually_exclusive_group(required=False)
-    main_group.add_argument('--import-discogs', required=False, action='store_true', help='import from Discogs')
+    main_group.add_argument('--import-new', required=False, action='store_true', help='import new items from Discogs')
+    main_group.add_argument('--import-all', required=False, action='store_true', help='import all items from Discogs')
     main_group.add_argument('--update-musicbrainz', required=False, action='store_true', help='update out of date items')
     main_group.add_argument('--scrape-discogs', required=False, action='store_true', help='update release dates from Discogs website')
     main_group.add_argument('--onthisday', required=False, action='store_true', help='display any release anniversaries')
