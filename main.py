@@ -722,82 +722,6 @@ if False:
 # print(x)
 
 
-def earliest_year(discogs_release):
-    discogs_master = discogs_release.master
-
-    if hasattr(discogs_release, 'year'):
-        release_year = discogs_release.year
-    else:
-        release_year = None
-
-    if discogs_master and hasattr(discogs_master, 'year'):
-        master_year = discogs_master.year
-    else:
-        master_year = None
-
-    if master_year and release_year:
-        return master_year if master_year < release_year else release_year
-
-    if master_year and not release_year:
-        return master_year
-
-    if release_year and not master_year:
-        return release_year
-
-    return release_year
-
-
-def find_musicbrainz_by_discogs_id(discogs_id):
-    # Construct Discogs URL
-    discogs_url = f"https://www.discogs.com/release/{discogs_id}"
-
-    try:
-        # Browse releases by Discogs URL
-        result = musicbrainzngs.browse_releases(url=discogs_url)
-
-        # Check if any matches were found
-        if result['release-list']:
-            print(f"Found {len(result['release-list'])} matching releases:")
-            for release in result['release-list']:
-                print(f"Title: {release['title']}")
-                print(f"MBID: {release['id']}")
-                print(f"Artist: {release['artist-credit'][0]['name']}")
-                print("-" * 40)
-            return result['release-list']
-        else:
-            print("No matching MusicBrainz release found.")
-            return None
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
-
-
-def find_musicbrainz_by_discogs_id2(discogs_id):
-    # Construct the Discogs URL
-    discogs_url = f"https://www.discogs.com/release/{discogs_id}"
-
-    try:
-        # Search broadly using Discogs URL-related fields (e.g., title, artist)
-        result = musicbrainzngs.search_releases(arid=None, limit=50)
-
-        for release in result.get('release-list', []):
-            # Fetch full release info to check relationships
-            release_details = musicbrainzngs.get_release_by_id(release['id'], includes=["url-rels"])
-
-            # Check if the Discogs URL is present in the relationships
-            for rel in release_details.get('release', {}).get('url-relation-list', []):
-                if rel['type'] == 'discogs' and rel['target'] == discogs_url:
-                    print(f"Found matching release: {release['title']} (MBID: {release['id']})")
-                    return release_details['release']
-
-        print("No matching MusicBrainz release found for the Discogs ID.")
-        return None
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return None
-
-
 def db_update_artist(release_id, artist):
     with db_ops(DATABASE) as cur:
         cur.execute('UPDATE items SET artist = ? WHERE release_id = ?', (artist, release_id))
@@ -828,11 +752,6 @@ def db_update_sort_name(release_id, sort_name):
         cur.execute('UPDATE items SET sort_name = ? WHERE release_id = ?', (sort_name, release_id))
 
 
-def db_update_year(release_id, year):
-    with db_ops(DATABASE) as cur:
-        cur.execute('UPDATE items SET year = ? WHERE release_id = ?', (year, release_id))
-
-
 def db_update_release_date(release_id, release_date):
     # release_date = release_date.strftime('%Y-%m-%d')
     with db_ops(DATABASE) as cur:
@@ -857,6 +776,12 @@ def db_update_mb_primary_type(release_id, mb_primary_type):
                     (mb_primary_type, release_id))
 
 
+def db_update_version_id(release_id, version_id):
+    with db_ops(DATABASE) as cur:
+        cur.execute('UPDATE items SET version_id = ? WHERE release_id = ?',
+                    (version_id, release_id))
+
+
 def db_fetch_row_by_discogs_id(discogs_id):
 
     with db_ops(DATABASE) as cur:
@@ -866,14 +791,14 @@ def db_fetch_row_by_discogs_id(discogs_id):
     return row
 
 
-def db_insert_row(artist=None, title=None, format=None, mb_primary_type=None, release_year=None, release_date=None, release_id=0, country=None, mb_id=None, mb_artist=None, mb_title=None, sort_name=None):
+def db_insert_row(artist=None, title=None, format=None, mb_primary_type=None, release_date=None, release_id=0, country=None, mb_id=None, mb_artist=None, mb_title=None, sort_name=None, version_id=0):
 
     with db_ops(DATABASE) as cur:
         cur.execute("""
-            INSERT INTO items (artist, title, format, mb_primary_type, year, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name)
+            INSERT INTO items (artist, title, format, mb_primary_type, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name, version_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-                    (artist, title, format, mb_primary_type, release_year, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name))
+                    (artist, title, format, mb_primary_type, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name, version_id))
 
 
 def db_get_release_date_by_discogs_id(discogs_id):
@@ -960,7 +885,7 @@ def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
             if release_date and row.release_date != release_date:
                 if row.release_date is not None and len(release_date) < len(row.release_date):
                     print(row_ignore_change(row.release_id, 'release_date',
-                          release_date, row.release_date), "ignored shorter")
+                          release_date, row.release_date, "ignored shorter"))
                 else:
                     print(row_change(row.release_id, 'release date', release_date, row.release_date))
                     db_update_release_date(row.release_id, release_date)
@@ -986,11 +911,11 @@ def convert_format(discogs_format):
         elif '7"' in secondary_types:
             format = '7" Single'
             mb_primary_type = 'single'
+        elif 'Compilation' in secondary_types:
+            format = 'Compilation LP'
+            mb_primary_type = 'album'
         elif 'LP' in secondary_types:
             format = 'LP'
-            mb_primary_type = 'album'
-        elif 'Compilation' in secondary_types:
-            format = 'LP Compilation'
             mb_primary_type = 'album'
         else:
             format = '?'
@@ -1066,14 +991,14 @@ def convert_format(discogs_format):
 
 
 def row_change(release_id, data_name, data_to, data_from):
-    return f'💾 {data_name} set to {data_from} (was {data_to}) for release {release_id}'
+    return f'💾 {data_name} set to {data_to} (was {data_from}) for release {release_id}'
 
 
 def row_ignore_change(release_id, data_name, data_to, data_from, reason):
-    return f'⛔️ {reason} {data_name} not set to {data_from} (still {data_to}) for release {release_id}'
+    return f'⛔️ {reason} {data_name} not set to {data_to} (still {data_from}) for release {release_id}'
 
 
-def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None):
+def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None, version_id=0):
 
     if not discogs_id and discogs_release:
         discogs_id = discogs_release.id
@@ -1084,11 +1009,6 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     print(f'⚙️ {discogs_summarise_release(discogs_release=discogs_release)}')
 
     discogs_master = discogs_release.master
-
-    # release_year = earliest_year(discogs_release)
-    release_year = discogs_release.year
-    if release_year == 0 and discogs_master:
-        release_year = discogs_master.year
 
     country = discogs_release.country
     mb_country = countries.get(country)
@@ -1115,13 +1035,9 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
 
     release_title = discogs_release.title
 
+    # attempt to match release group and release, and derive release date
     mb_release_group, mb_release, release_date = mb_find_release_group_and_release(
-        artist=artist_name, title=release_title, primary_type=mb_primary_type, discogs_id=discogs_release.id)
-
-    # # initialise the release date from the row, if it exists
-    # release_date = earliest_date(db_get_release_date_by_discogs_id(
-    #     discogs_id), str(release_year) if release_year else None)
-    # # release_date = earliest_date(db_get_release_date_by_discogs_id(discogs_id))
+        artist=artist_name, title=release_title, primary_type=mb_primary_type, country=mb_country, catnos=label_catnos, discogs_id=discogs_release.id)
 
     if not mb_release:
         # try just artist and catalogue number(s) first
@@ -1162,38 +1078,20 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             if mb_release:
                 break
 
-    # if not mb_release:
-    #     # last ditch attempt to find the release group, and the first release date field
-    #     mb_release_group = mb_get_release_group(
-    #         alias=artist_name, title=release_title, primary_type=primary_type)
-    #     if not mb_release_group:
-    #         mb_release_group = mb_get_release_group(
-    #             artist=artist_name, title=release_title, primary_type=primary_type)
-    #     if mb_release_group:
-    #         first_release_date = mb_release_group.get('first-release-date')
-    #         if first_release_date:
-    #             release_date = earliest_date(release_date, first_release_date)
-
-    if not mb_release:
-        print(f'❌ no match {discogs_summarise_release(discogs_release=discogs_release)}')
+    if mb_release:
+        if not release_date:
+            release_date = mb_release.get('date')
+    else:
+        print(
+            f'❌ no MusicBrainz match for {discogs_summarise_release(discogs_release=discogs_release)}')
+        version_id = 0
 
     row = db_fetch_row_by_discogs_id(discogs_release.id)
+    if row:
+        # update any changed fields in the minimal part of the row
+        if not release_date:
+            release_date = earliest_date(row.release_date, discogs_release.year)
 
-    if row is None and not mb_release:
-        # no row exists yet, but no MB release matched - just create a simplified row
-        print(f'💾 {discogs_summarise_release(discogs_release=discogs_release)}')
-        db_insert_row(release_id=discogs_release.id,
-                      artist=artist_name,
-                      title=release_title,
-                      format=format,
-                      mb_primary_type=mb_primary_type,
-                      release_year=release_year,
-                      release_date=release_date,
-                      country=mb_country)
-
-        return
-
-    if row is not None:
         if artist_name and row.artist != artist_name:
             print(row_change(row.release_id, 'artist', artist_name, row.artist))
             db_update_artist(discogs_release.id, artist_name)
@@ -1201,18 +1099,6 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         if release_title and row.title != release_title:
             print(row_change(row.release_id, 'title', release_title, row.title))
             db_update_title(discogs_release.id, release_title)
-
-        if release_date and row.release_date != release_date:
-            if row.release_date is not None and len(release_date) < len(row.release_date):
-                print(row_ignore_change(row.release_id, 'release_date',
-                      release_date, row.release_date), "ignored shorter")
-            else:
-                print(row_change(row.release_id, 'release date', release_date, row.release_date))
-                db_update_release_date(discogs_release.id, release_date)
-
-        if mb_country and row.country != mb_country:
-            print(row_change(row.release_id, 'country', mb_country, row.country))
-            db_update_country(discogs_release.id, mb_country)
 
         if format and row.format != format:
             print(row_change(row.release_id, 'format', format, row.format))
@@ -1222,10 +1108,68 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             print(row_change(row.release_id, 'mb_primary_type', mb_primary_type, row.mb_primary_type))
             db_update_mb_primary_type(discogs_release.id, mb_primary_type)
 
+        if mb_country and row.country != mb_country:
+            print(row_change(row.release_id, 'country', mb_country, row.country))
+            db_update_country(discogs_release.id, mb_country)
+
+        if release_date and row.release_date != release_date:
+            if row.release_date is not None and len(release_date) < len(row.release_date):
+                print(row_ignore_change(row.release_id, 'release_date',
+                                        release_date, row.release_date, "ignored shorter"))
+            else:
+                print(row_change(row.release_id, 'release date', release_date, row.release_date))
+                db_update_release_date(discogs_release.id, release_date)
+
+        if version_id and row.version_id != version_id:
+            print(row_change(row.release_id, 'version_id', version_id, row.version_id))
+            db_update_version_id(discogs_release.id, version_id)
+
+    else:
+
+        # no row exists yet - create a minimal row
+        print(f'💾 {discogs_summarise_release(discogs_release=discogs_release)}')
+
+        db_insert_row(release_id=discogs_release.id,
+                      artist=artist_name,
+                      title=release_title,
+                      format=format,
+                      mb_primary_type=mb_primary_type,
+                      release_date=discogs_release.year,
+                      country=mb_country,
+                      version_id=version_id)
+
+        row = db_fetch_row_by_discogs_id(discogs_release.id)
+
+    # at this point a number of scenarios are possible:
+    #   we definitely have a discogs release
+    #   we definitely have a row, either minimal or full
+    #   we might have a matched MusicBrainz release group, release and release date
+    #   we might just have a mtched MusicBrainz release
+    #   we might have no matched MusicBrainz release at all
+
     if mb_release is None:
+        # nothing further can be done with this release at this time, but certain fields
+        # should be unset if present
+        mb_id = None
+        mb_artist = None
+        mb_title = None
+
+        if row.mb_id != mb_id:
+            print(row_change(row.release_id, 'mb_id', mb_id, row.mb_id))
+            db_update_mb_id(row.release_id, mb_id)
+
+        if row.mb_artist != mb_artist:
+            print(row_change(row.release_id, 'mb_artist', mb_artist, row.mb_artist))
+            db_update_mb_artist(row.release_id, mb_artist)
+
+        if row.mb_title != mb_title:
+            print(row_change(row.release_id, 'mb_title', mb_title, row.mb_title))
+            db_update_mb_title(row.release_id, mb_title)
+
         return
 
-    release_date = earliest_date(mb_release.get('date'), release_date)
+    if not release_date:
+        release_date = earliest_date(mb_release.get('date'), release_date)
 
     # reload the release, including the release group information, artists etc
     mb_release_details = musicbrainzngs.get_release_by_id(
@@ -1238,76 +1182,12 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             release_date = earliest_date(
                 release_date, mb_release_group.get('first-release-date'))
 
-    if row is not None:
-        # row already exists, just update any out of date items
-        row = db_fetch_row_by_discogs_id(discogs_release.id)
+    # row already exists, just update any out of date or missing items
+    row = db_fetch_row_by_discogs_id(discogs_release.id)
 
-        release_id = row.release_id
+    release_id = row.release_id
 
-        mb_release = mb_release_details.get('release')
-        mb_id = mb_release.get('id')
-        mb_artist = mb_release.get('artist-credit-phrase')
-        mb_title = mb_release.get('title')
-        mb_artist_credit = mb_release.get('artist-credit')
-        mb_artist_first = mb_artist_credit[0].get('artist')
-        mb_sort_name = mb_artist_first.get('sort-name')
-        if not mb_sort_name:
-            mb_sort_name = mb_artist
-
-        if row.mb_id is None or row.mb_id != mb_id:
-            print(row_change(row.release_id, 'mb_id', mb_id, row.mb_id))
-            db_update_mb_id(release_id, mb_id)
-
-        if row.mb_artist is None or row.mb_artist != mb_artist:
-            print(row_change(row.release_id, 'mb_artist', mb_artist, row.mb_artist))
-            db_update_mb_artist(release_id, mb_artist)
-
-        if row.mb_title is None or row.mb_title != mb_title:
-            print(row_change(row.release_id, 'mb_title', mb_title, row.mb_title))
-            db_update_mb_title(release_id, mb_title)
-
-        if row.sort_name is None or row.sort_name != mb_sort_name and not mb_sort_name:
-            print(row_change(row.release_id, 'sort_name', mb_sort_name, row.sort_name))
-            db_update_sort_name(release_id, mb_sort_name)
-
-        if not row.year or row.year != str(release_year):
-            print(row_change(row.release_id, 'year', str(release_year), row.year))
-            db_update_year(release_id, str(release_year))
-
-        if row.release_date is None or row.release_date != release_date:
-            if row.release_date is not None and len(release_date) < len(row.release_date):
-                print(row_ignore_change(row.release_id, 'release_date',
-                      release_date, row.release_date), "ignored shorter")
-            else:
-                print(row_change(row.release_id, 'release_date', release_date, row.release_date))
-                db_update_release_date(release_id, release_date)
-
-        if format and row.format != format:
-            print(row_change(row.release_id, 'format', format, row.format))
-            db_update_format(discogs_release.id, format)
-
-        if mb_primary_type and row.mb_primary_type != mb_primary_type:
-            print(row_change(row.release_id, 'mb_primary_type', mb_primary_type, row.mb_primary_type))
-            db_update_mb_primary_type(discogs_release.id, mb_primary_type)
-
-        # print(f'skipping {row.release_id} {row.artist} {row.title} {row.year} {row.release_date}')
-        return
-
-    if discogs_master is not None and discogs_release.title != discogs_master.title:
-        print(
-            f'title mismatch: release {discogs_release.title} : master {discogs_master.title}')
-
-    print()
-    print(f'artist          : {artist_name}')
-    print(f'title           : {release_title}')
-    print(f'format          : {discogs_release.formats[0]['name']}')
-    print(f'year            : {release_year}')
-    print(f'release_id      : {discogs_release.id}')
-    print(f'release_date    : {release_date}')
-    if release_date:
-        delta = humanize_date_delta(release_date) + ' ago'
-        print(f'release_date    : {release_date} ({delta})')
-
+    mb_release = mb_release_details.get('release')
     mb_id = mb_release.get('id')
     mb_artist = mb_release.get('artist-credit-phrase')
     mb_title = mb_release.get('title')
@@ -1317,20 +1197,37 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     if not mb_sort_name:
         mb_sort_name = mb_artist
 
-    print(f'💾 {discogs_summarise_release(discogs_release=discogs_release)}')
-    db_insert_row(release_id=discogs_release.id,
-                  artist=artist_name,
-                  title=release_title,
-                  format=format,
-                  mb_primary_type=mb_primary_type,
-                  release_year=release_year,
-                  release_date=release_date,
-                  country=mb_country,
-                  mb_id=mb_id,
-                  mb_artist=mb_artist,
-                  mb_title=mb_title,
-                  sort_name=mb_sort_name
-                  )
+    if row.mb_id is None or row.mb_id != mb_id:
+        print(row_change(row.release_id, 'mb_id', mb_id, row.mb_id))
+        db_update_mb_id(release_id, mb_id)
+
+    if row.mb_artist is None or row.mb_artist != mb_artist:
+        print(row_change(row.release_id, 'mb_artist', mb_artist, row.mb_artist))
+        db_update_mb_artist(release_id, mb_artist)
+
+    if row.mb_title is None or row.mb_title != mb_title:
+        print(row_change(row.release_id, 'mb_title', mb_title, row.mb_title))
+        db_update_mb_title(release_id, mb_title)
+
+    if row.sort_name is None or row.sort_name != mb_sort_name and not mb_sort_name:
+        print(row_change(row.release_id, 'sort_name', mb_sort_name, row.sort_name))
+        db_update_sort_name(release_id, mb_sort_name)
+
+    if row.release_date is None or row.release_date != release_date:
+        if row.release_date is not None and len(release_date) < len(row.release_date):
+            print(row_ignore_change(row.release_id, 'release_date',
+                                    release_date, row.release_date, "ignored shorter"))
+        else:
+            print(row_change(row.release_id, 'release_date', release_date, row.release_date))
+            db_update_release_date(release_id, release_date)
+
+    if format and row.format != format:
+        print(row_change(row.release_id, 'format', format, row.format))
+        db_update_format(discogs_release.id, format)
+
+    if mb_primary_type and row.mb_primary_type != mb_primary_type:
+        print(row_change(row.release_id, 'mb_primary_type', mb_primary_type, row.mb_primary_type))
+        db_update_mb_primary_type(discogs_release.id, mb_primary_type)
 
 
 def import_from_discogs(discogs_id=None, all_rows=False):
@@ -1369,9 +1266,25 @@ def import_from_discogs(discogs_id=None, all_rows=False):
     print(f"    * oauth_token_secret = {discogs_access_secret}")
     print(" Authentication complete. Future requests will be signed with the above tokens.")
 
+    # get the highest version number, which will be used for all updates
+    max_version_id = 0
+    min_version_id = 0
+
+    with db_ops(DATABASE) as cur:
+
+        # get the highest version number
+        cur.execute("""
+                SELECT MAX(version_id) as max_version_id, MIN(version_id) as min_version_id FROM items
+            """)
+        row = cur.fetchone()
+
+        max_version_id = row.max_version_id if row.max_version_id else 0
+        min_version_id = row.min_version_id if row.min_version_id else 0
+
     if discogs_id:
         if all_rows:
-            update_row(discogs_client, discogs_item.release)
+            update_row(discogs_client=discogs_client,
+                       discogs_release=discogs_item.release, version_id=max_version_id)
             return
 
         row = db_fetch_row_by_discogs_id(discogs_item.id)
@@ -1379,7 +1292,8 @@ def import_from_discogs(discogs_id=None, all_rows=False):
             print(f'⏭️ {db_summarise_row(row=row)}')
             return
 
-        update_row(discogs_client, discogs_item.release)
+        update_row(discogs_client=discogs_client,
+                   discogs_release=discogs_item.release, version_id=max_version_id)
 
     else:
         folder = discogs_user.collection_folders[0]
@@ -1389,7 +1303,8 @@ def import_from_discogs(discogs_id=None, all_rows=False):
         for discogs_item in discogs_user.collection_folders[0].releases:
 
             if all_rows:
-                update_row(discogs_client, discogs_item.release)
+                update_row(discogs_client=discogs_client,
+                           discogs_release=discogs_item.release, version_id=max_version_id)
                 continue
 
             row = db_fetch_row_by_discogs_id(discogs_item.id)
@@ -1397,7 +1312,8 @@ def import_from_discogs(discogs_id=None, all_rows=False):
                 print(f'⏭️ {db_summarise_row(row=row)}')
                 continue
 
-            update_row(discogs_client, discogs_item.release)
+            update_row(discogs_client=discogs_client,
+                       discogs_release=discogs_item.release, version_id=max_version_id)
 
 
 def open_db():
@@ -1408,10 +1324,11 @@ def open_db():
         if res.fetchone() is None:
             print("creating table")
             cur.execute(
-                "CREATE TABLE items(artist, title, format, year, release_id, release_date, country, mb_id, mb_artist, mb_title, sort_name)")
+                "CREATE TABLE items(artist, title, format, release_id, release_date, country, mb_id, mb_artist, mb_title, sort_name, version_id)")
             cur.execute("CREATE UNIQUE INDEX idx_items_release_id ON items(release_id)")
             cur.execute(
-                "CREATE UNIQUE INDEX idx_items_sort ON items(sort_name, artist, year, title, release_id)")
+                "CREATE UNIQUE INDEX idx_items_sort ON items(sort_name, artist, release_date, title, release_id)")
+            cur.execute("CREATE UNIQUE INDEX idx_items_version ON items(version_id, release_id)")
     # else:
     #   cur.execute("ALTER TABLE status ADD locked NOT NULL DEFAULT 0")
         # word count, word list, words
@@ -1419,6 +1336,187 @@ def open_db():
         # cur.execute("ALTER TABLE status DROP words_found")
         # cur.execute("ALTER TABLE status ADD transcription")
         # cur.execute("CREATE UNIQUE INDEX idx_status_primary ON status(girl, number)")
+
+
+def fls(data_str, length):
+    if len(data_str) > length:
+        return data_str[:length-1]
+    else:
+        return data_str.ljust(length)
+
+
+def match(text):
+
+    with db_ops(DATABASE) as cur:
+
+        cur.execute(f"""
+            SELECT *
+            FROM items
+            WHERE artist LIKE '%{text}%'
+            OR mb_artist LIKE '%{text}%'
+            OR title LIKE '%{text}%'
+            OR mb_title LIKE '%{text}%'
+            OR sort_name LIKE '%{text}%'
+            ORDER BY artist, release_date, title, release_id
+        """)
+
+        rows = cur.fetchall()
+
+        # print(f'{len(rows)} rows')
+
+        artist_len = 0
+        title_len = 0
+        format_len = 0
+        release_date_len = 0
+
+        for p in range(2):
+            if p == 0:
+                artist_len = 0
+                title_len = 0
+                format_len = 0
+                release_date_len = 0
+
+                last_artist = None
+
+            for row in rows:
+
+                artist = row.mb_artist if row.mb_artist else row.artist if row.artist else 'Unknown artist'
+                artist = row.artist
+                title = row.mb_title if row.mb_title else row.title if row.title else 'Unknown title'
+
+                format = row.format if row.format else ''
+                release_date = row.release_date if row.release_date else ''
+
+                if release_date:
+                    delta = humanize_date_delta(row.release_date)
+
+                if p == 0:
+                    title_len = max(title_len, len(title))
+                    title_len = max(title_len, len(title))
+
+                    format_len = max(format_len, len(format))
+                    release_date_len = max(release_date_len, len(release_date))
+                else:
+                    # print(
+                    #     f"{row.release_id:>8} {artist:20} {title:20} {format:10} {release_date:10}")
+                    # print(
+                    #     f'{row.release_id:>8} {fls(artist, artist_len)} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+                    if artist != last_artist:
+                        last_artist = artist
+                        print()
+                        print(artist)
+                        print('='*len(artist))
+
+                    print(
+                        f'{row.release_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+
+
+def status():
+
+    def output_nvp(label, value):
+        print(f'{fls(label, 45)}: {value}')
+
+    oauth_token = 'bTNnyxNgaHvEarRXVjBiRAoJZgTBPuUXosDEdiEG'
+    ouath_token_secret = 'YJfCvMXmaxJgfroTnSjtSDKWZpsLbEYPEwUwuSyK'
+
+    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(
+        oauth_token, ouath_token_secret)
+
+    # fetch the identity object for the current logged in user.
+    discogs_user = discogs_client.identity()
+
+    output_nvp("Discogs username", discogs_user.username)
+    output_nvp("MusicBrainz username", MUSICBRAINZ_USERNAME)
+
+    folder = discogs_user.collection_folders[0]
+
+    output_nvp('releases on Discogs', len(folder.releases))
+
+    with db_ops(DATABASE) as cur:
+
+        cur.execute("""
+            SELECT COUNT(*) as count
+            FROM items
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releasees in local database', row.count)
+
+        cur.execute("""
+            SELECT COUNT(*) as count
+            FROM items
+            WHERE mb_id IS NOT NULL
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases matched in MusicBrainz', row.count)
+
+        cur.execute("""
+            SELECT COUNT(*) as count
+            FROM items
+            WHERE mb_id IS NULL
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases not matched in MusicBrainz', row.count)
+
+        # get the highest version number, which will be used for all updates
+        max_version_id = 0
+        min_version_id = 0
+
+        # get the highest version number
+        cur.execute("""
+                SELECT MAX(version_id) as max_version_id, MIN(version_id) as min_version_id FROM items
+            """)
+        row = cur.fetchone()
+
+        max_version_id = row.max_version_id if row.max_version_id else 0
+        min_version_id = row.min_version_id if row.min_version_id else 0
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM items
+            WHERE version_id IS NULL OR version_id < {max_version_id}
+        """)
+        row = cur.fetchone()
+
+        output_nvp('local releases pending update', row.count)
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM items
+            WHERE release_date IS NULL OR release_date = ''
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases with no release date', row.count)
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM items
+            WHERE LENGTH(release_date) = 4
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases with just release year', row.count)
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM items
+            WHERE LENGTH(release_date) = 7
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases with just release month and year', row.count)
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM items
+            WHERE LENGTH(release_date) = 10
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases with full release date', row.count)
 
 
 def random_selection():
@@ -1449,10 +1547,9 @@ def output_row(row):
     print(f'artist          : {row.artist}')
     print(f'title           : {row.title}')
     print(f'format          : {row.format}')
-    print(f'year            : {row.year}')
     print(f'release_id      : {row.release_id}')
     if row.release_date:
-        print(f'release_date    : {row.release_date}')
+        # print(f'release_date    : {row.release_date}')
         print(f'release_date    : {parse_and_humanize_date(row.release_date)}')
 
 
@@ -1463,6 +1560,9 @@ def update_mb_id(release_id, mb_id):
 
 
 def parse_date(date_str):
+    if date_str and not isinstance(date_str, str):
+        date_str = str(date_str)
+
     date_formats = ['%Y-%m-%d', '%Y-%m', '%Y']
     settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first'}
 
@@ -1511,7 +1611,7 @@ def parse_and_humanize_date(ymd_date):
     return ''
 
 
-def update_table(discogs_id=0, mb_id=None):
+def update_table(discogs_id=0, mb_id=None, reset_versions=False):
 
     musicbrainz.set_useragent(USER_AGENT, '0.1', 'steve.powell@outlook.com')
 
@@ -1534,17 +1634,41 @@ def update_table(discogs_id=0, mb_id=None):
     discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(
         oauth_token, ouath_token_secret)
 
+    # get the highest version number, which will be used for all updates
+    max_version_id = 0
+    min_version_id = 0
+
+    if reset_versions:
+        # reset the row versions, so that all will be processed
+        with db_ops(DATABASE) as cur:
+            cur.execute("""
+                    UPDATE items
+                    SET version_id = 0
+                """)
+    else:
+        with db_ops(DATABASE) as cur:
+
+            # get the highest version number
+            cur.execute("""
+                    SELECT MAX(version_id) as max_version_id, MIN(version_id) as min_version_id FROM items
+                """)
+            row = cur.fetchone()
+
+            max_version_id = row.max_version_id if row.max_version_id else 0
+            min_version_id = row.min_version_id if row.min_version_id else 0
+
     if discogs_id:
         row = db_fetch_row_by_discogs_id(discogs_id)
         if row is not None:
-            update_row(discogs_client, discogs_id=int(discogs_id))
+            update_row(discogs_client, discogs_id=int(discogs_id), version_id=max_version_id)
         else:
             print(f'discogs_id {discogs_id} not found')
 
     elif mb_id:
         row = db_fetch_row_by_mb_id(mb_id)
         if row is not None:
-            update_row(discogs_client, discogs_id=row.release_id, mb_id=mb_id)
+            update_row(discogs_client, discogs_id=row.release_id,
+                       mb_id=mb_id, max_version_id=max_version_id)
         else:
             print(f'MBID {mb_id} not found')
 
@@ -1552,20 +1676,26 @@ def update_table(discogs_id=0, mb_id=None):
 
         with db_ops(DATABASE) as cur:
 
-            # cur.execute("""
-            #         SELECT *
-            #         FROM items
-            #         WHERE mb_id IS NULL or mb_artist IS NULL or mb_title IS NULL or sort_name IS NULL or country IS NULL
-            #         ORDER BY artist, year, title, release_id
-            #     """)
-            cur.execute("""
-                    SELECT * FROM items
-                """)
+            if max_version_id > 0 and max_version_id > min_version_id:
+                # only process items below the maximum version
+                cur.execute(f"""
+                        SELECT * FROM items WHERE version_id IS NULL OR version_id < {max_version_id}
+                    """)
+                rows = cur.fetchall()
 
-            rows = cur.fetchall()
+                for row in rows:
+                    update_row(discogs_client, discogs_id=row.release_id, version_id=max_version_id)
+            else:
+                # process all rows
+                cur.execute("""
+                        SELECT * FROM items
+                    """)
 
-            for row in rows:
-                update_row(discogs_client, discogs_id=row.release_id)
+                rows = cur.fetchall()
+
+                for row in rows:
+                    update_row(discogs_client, discogs_id=row.release_id,
+                               version_id=max_version_id+1)
 
 
 def scrape_discogs(discogs_id=0, mb_id=None):
@@ -1600,7 +1730,7 @@ def scrape_discogs(discogs_id=0, mb_id=None):
                 SELECT *
                 FROM items
                 WHERE mb_id IS NULL or mb_artist IS NULL or mb_title IS NULL or sort_name IS NULL or country IS NULL
-                ORDER BY artist, year, title, release_id
+                ORDER BY artist, release_date, title, release_id
             """)
 
             rows = cur.fetchall()
@@ -1686,6 +1816,12 @@ def earliest_date(dt1_str, dt2_str):
         considered earlier than 1982-05
     """
 
+    if dt1_str and not isinstance(dt1_str, str):
+        dt1_str = str(dt1_str)
+
+    if dt2_str and not isinstance(dt2_str, str):
+        dt2_str = str(dt2_str)
+
     if dt1_str == dt2_str:
         return dt1_str
 
@@ -1738,7 +1874,7 @@ def earliest_date(dt1_str, dt2_str):
     return dt1_str
 
 
-def mb_find_release_group_and_release(artist='', title='', primary_type=None, alias='', discogs_id=0):
+def mb_find_release_group_and_release(artist='', title='', primary_type=None, alias='', country='', catnos=[], discogs_id=0):
     """ Search for a release group and release (if discogs_id is specified)
 
         All these fields are searchable, only some are implemented.
@@ -1817,6 +1953,39 @@ def mb_find_release_group_and_release(artist='', title='', primary_type=None, al
                         release_date = earliest_date(
                             group.get('first-release-date'), gr_release.get('date'))
                         return gr_group, gr_release, release_date
+
+                    gr_release = musicbrainzngs.get_release_by_id(gr_release.get(
+                        'id'), includes=["url-rels", 'artists', 'artist-credits', 'labels']).get('release')
+
+                    if artist and gr_release.get('artist-credit-phrase') != artist:
+                        continue
+
+                    if title and gr_release.get('title') != title:
+                        continue
+
+                    # if primary_type and gr_release.get('primarytype') != primary_type:
+                    #     continue
+
+                    if country and gr_release.get('country') != country:
+                        continue
+
+                    # catnos = []
+                    if catnos and len(catnos):
+                        match = False
+                        for catno in catnos:
+                            for label_info in gr_release.get('label-info-list'):
+                                find_catno = label_info.get('catalog-number')
+                                if catno == sanitise_identifier(find_catno):
+                                    match = True
+                                    break
+
+                            if match:
+                                break
+
+                        if not match:
+                            continue
+
+                    print(f'? maybe {mb_summarise_release(id=gr_release.get('id'))}')
 
         # Check if we've reached the end
         if len(release_group_list) < batch_size:
@@ -1942,6 +2111,7 @@ def mb_match_discogs_release(release_id, discogs_url):
     local_release = mb_release.get('release', {})
 
     for rel in local_release.get('url-relation-list', []):
+        # print(f'    type {rel['type']} target {rel['target']}')
         if rel['type'] == 'discogs':
             # print(f'    type {rel['type']} target {rel['target']}')
             if rel['type'] == 'discogs' and rel['target'] == discogs_url:
@@ -2090,6 +2260,38 @@ def discogs_summarise_release(discogs_release=None, id=None, discogs_client=None
     return ' '.join(output)
 
 
+def db_formatted_row(row=None, id=None):
+    if not row and id:
+        row = db_fetch_row_by_discogs_id(id)
+
+    output = []
+
+    id = row.release_id
+    output.append(f'release {id}')
+
+    artist = row.artist
+    if artist:
+        output.append(artist)
+
+    title = row.title
+    if title:
+        output.append(title)
+
+    format = row.format
+    if format:
+        output.append(format)
+
+    release_date = row.release_date
+    if release_date:
+        output.append(str(release_date))
+
+    country = row.country
+    if country:
+        output.append(country)
+
+    return ' '.join(output)
+
+
 def db_summarise_row(row=None, id=None):
     if not row and id:
         row = db_fetch_row_by_discogs_id(id)
@@ -2110,10 +2312,6 @@ def db_summarise_row(row=None, id=None):
     release_date = row.release_date
     if release_date:
         output.append(str(release_date))
-    else:
-        year = row.year
-        if year:
-            output.append(str(year))
 
     # country = row.country
     # if country:
@@ -2255,7 +2453,7 @@ def on_this_day(today_str=''):
             SELECT *
             FROM items
             WHERE release_date IS NOT NULL
-            ORDER BY artist, year, title, release_id
+            ORDER BY artist, release_date, title, release_id
         """)
 
         rows = cur.fetchall()
@@ -2290,7 +2488,9 @@ def main():
 
     open_db()
 
-    # discogs_id = 26065033
+    # discogs_id = 5084926
+    # update_table(discogs_id=2635834)
+    # return
 
     if args.import_new:
         import_from_discogs(discogs_id=discogs_id, all_rows=False)
@@ -2299,16 +2499,22 @@ def main():
         import_from_discogs(discogs_id=discogs_id, all_rows=True)
 
     elif args.update_musicbrainz:
-        update_table(discogs_id=discogs_id, mb_id=mb_id)
+        update_table(discogs_id=discogs_id, mb_id=mb_id, reset_versions=args.reset)
 
     elif args.scrape_discogs:
         scrape_discogs(discogs_id=discogs_id, mb_id=mb_id)
+
+    elif args.match:
+        match(args.match)
 
     elif args.random:
         random_selection()
 
     elif args.onthisday:
         on_this_day()
+
+    elif args.status:
+        status()
 
 
 if __name__ == "__main__":
@@ -2331,10 +2537,13 @@ if __name__ == "__main__":
     main_group.add_argument('--scrape-discogs', required=False, action='store_true', help='update release dates from Discogs website')
     main_group.add_argument('--onthisday', '--on-this-day', required=False, action='store_true', help='display any release anniversaries')
     main_group.add_argument('--random', required=False, action='store_true', help='generate random selection')
+    main_group.add_argument('--match', required=False, help='find matching text in database')
+    main_group.add_argument('--status', required=False, action='store_true', help='report status of database')
 
     id_group = parser.add_mutually_exclusive_group(required=False)
     id_group.add_argument('--release-id', required=False, help='restrict init or update to a specific Discogs id')
     id_group.add_argument('--mbid', required=False, help='restrict init or update to a specific MusicBrainz id')
+    id_group.add_argument('--reset', required=False, action='store_true', help='reset version number to force full update')
 
     parser.add_argument('--dry-run', required=False, action="store_true", help='dry run to test filtering')
     parser.add_argument('--verbose', required=False, action='store_true', help='verbose messages')
