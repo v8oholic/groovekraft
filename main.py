@@ -394,6 +394,114 @@ def db_ops(db_name):
         conn.close()
 
 
+def disambiguator_score(discogs_release=None, discogs_id=None, mb_release=None, mb_id=None, discogs_client=None):
+    """Score a MusicBrainz release against a Discogs release
+
+    Returns a rounded percentage score, with 100 being a perfect match."""
+
+    if not discogs_id and discogs_release:
+        discogs_id = discogs_release.id
+
+    if not discogs_release and discogs_id:
+        discogs_release = discogs_client.release(discogs_id)
+
+    load_mbid = None
+
+    if mb_release:
+        x = mb_release.get('label-info-count')
+        if not x:
+            load_mbid = mb_release.get('id')
+        x = mb_release.get('artist-credit-phrase')
+        if not x:
+            load_mbid = mb_release.get('id')
+        x = mb_release.get('medium-list')
+        if not x:
+            load_mbid = mb_release.get('id')
+    else:
+        load_mbid = id
+
+    if mb_release is None and load_mbid == 0:
+        raise Exception("Unable to load MusicBrainz release")
+
+    if load_mbid:
+        mb_release = musicbrainzngs.get_release_by_id(
+            load_mbid, includes=['artists', 'artist-credits', 'labels', 'media'])
+        if mb_release:
+            mb_release = mb_release.get('release')
+        else:
+            raise Exception("Unable to load MusicBrainz release")
+
+    artist_score = 0
+    title_score = 0
+    country_score = 0
+    format_score = 0
+    barcode_score = 0
+    catno_score = 0
+    maximum_points = 12
+
+    artist = trim_if_ends_with_number_in_brackets(discogs_release.artists[0].name)
+    if artist == 'Various':
+        artist = 'Various Artists'
+    artist = artist.casefold()
+    if artist == mb_release.get('artist-credit-phrase').casefold():
+        artist_score = 2
+
+    title = discogs_release.title.casefold()
+    if title == mb_release.get('title').casefold():
+        title_score = 2
+
+    country = countries.get(discogs_release.country)
+    if country == mb_release.get('country'):
+        country_score = 2
+
+    _, _, mb_format = convert_format(discogs_release.formats[0])
+    media = mb_release.get('medium-list')
+    if media and len(media):
+        first_media = media[0]
+        format = first_media.get('format')
+        if format in ['Enhanced CD', 'Copy Control CD', 'HDCD']:
+            format = 'CD'
+        if format == mb_format:
+            format_score = 2
+
+    barcodes = []
+    discogs_identifiers = discogs_release.fetch('identifiers')
+    for identifier in discogs_identifiers:
+        if identifier['type'] == 'Barcode':
+            barcodes.append(sanitise_identifier(identifier['value']))
+    barcodes = list(set(barcodes))
+    release_barcode = mb_release.get('barcode')
+    if barcodes and release_barcode:
+        release_barcode = sanitise_identifier(release_barcode)
+        for barcode in barcodes:
+            if barcode == release_barcode:
+                barcode_score = 2
+                break
+    else:
+        # if barcode is missing from either or both, assume still possible match
+        barcode_score = 1
+
+    catnos = list(set([sanitise_identifier(x.data['catno']) for x in discogs_release.labels]))
+    mb_catnos = []
+    for label_info in mb_release.get('label-info-list'):
+        find_catno = label_info.get('catalog-number')
+        mb_catnos.append(find_catno)
+    mb_catnos = list(set(catnos))
+    if catnos and mb_catnos:
+        for catno in catnos:
+            for label_info in mb_release.get('label-info-list'):
+                find_catno = label_info.get('catalog-number')
+                if find_catno and catno == sanitise_identifier(find_catno):
+                    catno_score = 2
+                    break
+    else:
+        catno_score = 1
+
+    total_points = artist_score+title_score+country_score+format_score+catno_score+barcode_score
+
+    return round(100 * total_points/maximum_points)
+
+
 def scrape_table(url):
 
     try:
@@ -1120,6 +1228,41 @@ def row_ignore_change(release_id, data_name, data_to, data_from, reason):
     return f'⛔️ {reason} {data_name} not set to {data_to} (still {data_from}) for release {release_id}'
 
 
+def mb_get_releases_for_release_group(mb_id):
+
+    batch_offset = 0
+    batch_size = 25
+    max_results = 200
+    release_list = []
+
+    try:
+        while len(release_list) < max_results:
+            rels = musicbrainzngs.browse_releases(
+                release_group=mb_id,
+                includes=['artist-credits', 'labels', 'media', 'release-groups'],
+                limit=batch_size,
+                offset=batch_offset
+            )
+
+            # Add new results
+            batch_release_list = rels.get('release-list', [])
+            release_list.extend(batch_release_list)
+
+            # Check if we've reached the end
+            if len(batch_release_list) < batch_size:
+                break
+
+            # Move to the next page
+            batch_offset += batch_size
+
+    except Exception as e:
+        print(e)
+        release_list = []
+
+    finally:
+        return release_list
+
+
 def find_match_by_discogs_link(discogs_release=None):
     """Search MusicBrainz by Discogs release URL
 
@@ -1127,12 +1270,48 @@ def find_match_by_discogs_link(discogs_release=None):
 
     Returns the release, release group and release date if successful."""
 
-    mb_release = mb_find_release_by_discogs_release_link(discogs_release=discogs_release)
+    mb_release = None
+    mb_release_group = None
+
+    releases = mb_browse_releases_by_discogs_release_link(discogs_id=discogs_release.id)
+    if not releases:
+        # no match found
+        mb_release = None
+    elif len(releases) == 1:
+        mb_release = releases[0]
+        # we are only expecting 1 match
+        print(f'🎯 matched {mb_summarise_release(id=mb_release.get('id'))}')
+    else:
+        # print(f'❗️ unexpected number of matches for Discogs URL ({len(releases)})')
+
+        best_match_score = 0
+        best_match_release = None
+
+        for release in releases:
+            disambiguation_score = disambiguator_score(
+                discogs_release=discogs_release, mb_release=release)
+
+            # print(f'{disambiguation_score:3}% {mb_summarise_release(release)}')
+
+            if disambiguation_score == 100:
+                # pefect match
+                best_match_score = disambiguation_score
+                best_match_release = release
+                break
+            elif disambiguation_score > best_match_score:
+                best_match_score = disambiguation_score
+                best_match_release = release
+
+        if best_match_score == 100:
+            mb_release = best_match_release
+            print(f'💯 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+        elif best_match_score > 0:
+            mb_release = best_match_release
+            print(f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+        else:
+            mb_release = None
 
     if mb_release:
-        # print(f'✅ matched {mb_summarise_release(id=mb_release.get('id'))}')
-        # print(f'🎯 matched {mb_summarise_release(id=mb_release.get('id'))}')
-
         # success - load the release group too
         mb_release = musicbrainzngs.get_release_by_id(
             mb_release['id'], includes=["release-groups", 'artists', 'artist-credits'])
@@ -1148,115 +1327,134 @@ def find_match_by_discogs_link(discogs_release=None):
 
         return mb_release_group, mb_release, first_release_date
 
-    artist = trim_if_ends_with_number_in_brackets(discogs_release.artists[0].name)
-    if artist == 'Various':
-        artist = 'Various Artists'
-
-    country = countries.get(discogs_release.country)
-
-    catnos = list(set([sanitise_identifier(x.data['catno']) for x in discogs_release.labels]))
-
-    format, mb_primary_type, mb_format = convert_format(discogs_release.formats[0])
-
-    # get the barcode
-    barcodes = []
-    discogs_identifiers = discogs_release.fetch('identifiers')
-    for identifier in discogs_identifiers:
-        if identifier['type'] == 'Barcode':
-            barcodes.append(sanitise_identifier(identifier['value']))
-    barcodes = list(set(barcodes))
-
     if discogs_release.master is None:
         # no master specified for this Discogs release, cannot continue
         return None, None, None
 
     # try to find the release group link instead
-    mb_release_group = mb_find_release_group_by_discogs_master_link(
-        discogs_release=discogs_release.master)
+    release_groups = mb_browse_release_groups_by_discogs_master_link(
+        discogs_master_id=discogs_release.master.id)
+    if not release_groups:
+        # no match found
+        mb_release_group = None
+    elif len(release_groups) == 1:
+        mb_release_group = release_groups[0]
+        # we are only expecting 1 match
+    else:
+        # more than 1 release group match
+        all_releases = []
+        for release_group in release_groups:
+            releases = mb_get_releases_for_release_group(mb_id=release_group.get('id'))
+            all_releases.extend(releases)
+
+        best_match_score = 0
+        best_match_release = None
+
+        for release in all_releases:
+            disambiguation_score = disambiguator_score(
+                discogs_release=discogs_release, mb_release=release)
+
+            # print(f'{disambiguation_score:3}% {mb_summarise_release(release)}')
+
+            if disambiguation_score == 100:
+                # pefect match
+                best_match_score = disambiguation_score
+                best_match_release = release
+                break
+            elif disambiguation_score > best_match_score:
+                best_match_score = disambiguation_score
+                best_match_release = release
+
+        if best_match_score == 100:
+            mb_release = best_match_release
+            print(f'💯 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+        elif best_match_score > 0:
+            mb_release = best_match_release
+            print(f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+        else:
+            # nothing matched
+            return None, None, None
+
+        # get the group
+        release_group_id = mb_release.get('release-group').get('id')
+        mb_release_group = musicbrainzngs.get_release_group_by_id(
+            release_group_id, includes=['artists', 'releases', 'artist-credits'])
+        mb_release_group = mb_release_group.get('release-group')
+
+        first_release_date = earliest_date(mb_release_group.get(
+            'first-release-date'), mb_release.get('date'))
+
+        return mb_release_group, mb_release, first_release_date
 
     if not mb_release_group:
         # failed to find the group
         return None, None, None
 
-    # reload the group, including the release list
-    mb_release_group = musicbrainzngs.get_release_group_by_id(
-        mb_release_group.get('id'), includes=['releases'])
-    mb_release_group = mb_release_group.get('release-group')
-    print('got ' + mb_summarise_release_group(mb_release_group))
+    batch_offset = 0
+    batch_size = 25
+    max_results = 200
+    release_list = []
 
-    # one of these MB releases is probably a reasonable match for the Discogs release
-    candidates = []
+    try:
+        while len(release_list) < max_results:
+            rels = musicbrainzngs.browse_releases(
+                release_group=mb_release_group.get('id'),
+                includes=['artist-credits', 'labels', 'media'],
+                limit=batch_size,
+                offset=batch_offset
+            )
 
-    for idx, rel in enumerate(mb_release_group.get('release-list')):
-        print(str(idx) + ': ' + mb_summarise_release(rel))
-        if mb_match_discogs_release(mb_release_id=rel.get('id'), discogs_url=make_discogs_url(discogs_release.id)):
-            print('match')
-        # home made match
-        mb_release = musicbrainzngs.get_release_by_id(
-            rel.get('id'), includes=['artists', 'artist-credits', 'labels'])
-        if mb_release:
-            mb_release = mb_release.get('release')
-        artist_match = artist == mb_release.get('artist-credit-phrase')
-        title_match = discogs_release.title == mb_release.get('title')
-        country_match = country == mb_release.get('country')
+            # Add new results
+            batch_release_list = rels.get('release-list', [])
+            release_list.extend(batch_release_list)
 
-        barcode_match = False
-        release_barcode = mb_release.get('barcode')
-        if release_barcode:
-            release_barcode = sanitise_identifier(release_barcode)
-            if barcodes and len(barcodes):
-                barcode_match = False
-                for barcode in barcodes:
-                    if barcode == release_barcode:
-                        barcode_match = True
-                        break
-        # else:
-        #     barcode_match = True
+            # Check if we've reached the end
+            if len(batch_release_list) < batch_size:
+                break
 
-        catno_match = False
-        if catnos and len(catnos):
-            catno_match = False
-            for catno in catnos:
-                for label_info in mb_release.get('label-info-list'):
-                    find_catno = label_info.get('catalog-number')
-                    if find_catno and catno == sanitise_identifier(find_catno):
-                        catno_match = True
-                        break
-        # else:
-        #     catno_match = True
+            # Move to the next page
+            batch_offset += batch_size
 
-        if artist_match and title_match and country_match and catno_match:
-            candidates.append(mb_release)
-        elif artist_match and title_match and country_match and barcode_match:
-            candidates.append(mb_release)
+    except Exception as e:
+        print(e)
+        rels = []
 
-    # if there are no candidates, the match has failed
-    if len(candidates) == 0:
+    if not release_list:
+        # no releases, shouldn't happen
         return None, None, None
 
-    first_release_date = mb_release_group.get('first-release-date')
+    best_match_score = 0
+    best_match_release = None
 
-    print(f'{len(candidates)} candidates')
-    for candidate in candidates:
-        print(mb_summarise_release(candidate))
-        print(f'disambiguation: {candidate.get('disambiguation')}')
-        release_date = candidate.get('date')
-        if release_date:
-            if not first_release_date:
-                first_release_date = release_date
+    for idx, mb_release in enumerate(release_list):
+        disambiguation_score = disambiguator_score(
+            discogs_release=discogs_release, mb_release=mb_release)
 
-            elif len(release_date) >= len(first_release_date):
-                first_release_date = earliest_date(release_date, first_release_date)
+        # print(f'{disambiguation_score:3}% {mb_summarise_release(mb_release)}')
 
-    print(first_release_date)
+        if disambiguation_score == 100:
+            # pefect match
+            best_match_score = disambiguation_score
+            best_match_release = mb_release
+            break
+        elif disambiguation_score > best_match_score:
+            best_match_score = disambiguation_score
+            best_match_release = mb_release
 
-    if len(candidates) > 1:
-        # unable to disambiguate further, so use the first candidate
-        print(f'✅ matched {mb_summarise_release(id=mb_release.get('id'))}')
-        mb_release = candidates[0]
+    if best_match_score == 100:
+        mb_release = best_match_release
+        print(f'💯 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+    elif best_match_score > 0:
+        mb_release = best_match_release
+        print(f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
     else:
-        print(f'🎯 matched {mb_summarise_release(id=mb_release.get('id'))}')
-        mb_release = candidates[0]
+        # nothing matched
+        return None, None, None
+
+    first_release_date = earliest_date(
+        mb_release_group.get('first-release-date'),
+        mb_release.get('date')
+    )
 
     return mb_release_group, mb_release, first_release_date
 
@@ -1314,58 +1512,83 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             discogs_id=discogs_release.id)
 
     if not mb_release:
-        # try just artist and catalogue number(s) first
-        for catno in label_catnos:
-            mb_release = mb_find_release(artist=artist_name, catno=catno, country=mb_country, format=mb_format,
-                                         discogs_id=discogs_release.id)
-            if mb_release:
-                break
+        candidates = []
 
-    if not mb_release:
+        for catno in label_catnos:
+            candidates.extend(mb_find_releases(
+                artist=artist_name,
+                catno=catno,
+                country=mb_country,
+                format=mb_format,
+            ))
+
         for barcode in barcodes:
-            mb_release = mb_find_release(artist=artist_name, barcode=barcode, country=mb_country, format=mb_format,
-                                         discogs_id=discogs_release.id)
-            if mb_release:
-                break
+            candidates.extend(mb_find_releases(
+                artist=artist_name,
+                barcode=barcode,
+                country=mb_country,
+                format=mb_format,
+            ))
 
-    if not mb_release:
-        # try just artist and catalogue number(s) first
         for catno in label_catnos:
-            mb_release = mb_find_release(artist=artist_name, catno=catno, format=mb_format,
-                                         discogs_id=discogs_release.id)
-            if mb_release:
-                break
+            candidates.extend(mb_find_releases(
+                artist=artist_name,
+                catno=catno,
+                format=mb_format,
+            ))
 
-    if not mb_release:
-        # try title and catalogue number
         for catno in label_catnos:
-            mb_release = mb_find_release(title=release_title, catno=catno)
-            if mb_release:
-                break
+            candidates.extend(mb_find_releases(
+                title=release_title,
+                catno=catno
+            ))
 
-    if not mb_release:
-        # try title, catno and barcode
-        if barcode:
-            for catno in label_catnos:
-                mb_release = mb_find_release(title=release_title, catno=catno, barcode=barcode)
-                if mb_release:
-                    break
-
-    if not mb_release:
-        # try artist title catno
         for catno in label_catnos:
-            mb_release = mb_find_release(
-                artist=artist_name, title=release_title, discogs_id=discogs_release.id, catno=catno)
-            if mb_release:
-                break
+            candidates.extend(mb_find_releases(
+                title=release_title,
+                catno=catno,
+                barcode=barcode
+            ))
 
-    if not mb_release:
-        # try artist title catno type country
         for catno in label_catnos:
-            mb_release = mb_find_release(artist=artist_name, title=release_title, discogs_id=discogs_release.id,
-                                         catno=catno, primary_type=mb_primary_type, country=mb_country)
-            if mb_release:
+            candidates.extend(mb_find_releases(
+                artist=artist_name,
+                title=release_title,
+                catno=catno
+            ))
+
+        for catno in label_catnos:
+            candidates.extend(mb_find_releases(
+                artist=artist_name,
+                title=release_title,
+                catno=catno,
+                primary_type=mb_primary_type,
+                country=mb_country
+            ))
+
+        best_match_score = 0
+        best_match_release = None
+
+        for release in candidates:
+            disambiguation_score = disambiguator_score(
+                discogs_release=discogs_release, mb_release=release)
+
+            if disambiguation_score == 100:
+                best_match_score = disambiguation_score
+                best_match_release = release
                 break
+            elif disambiguation_score > best_match_score:
+                best_match_score = disambiguation_score
+                best_match_release = release
+
+        if best_match_score == 100:
+            mb_release = best_match_release
+            print(f'💯 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+        elif best_match_score > 0:
+            mb_release = best_match_release
+            print(f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+        else:
+            mb_release = None
 
     if mb_release:
         if not release_date:
@@ -2313,7 +2536,7 @@ def mb_find_release_group_and_release(artist='', title='', primary_type=None, al
                         for catno in catnos:
                             for label_info in gr_release.get('label-info-list'):
                                 find_catno = label_info.get('catalog-number')
-                                if catno == sanitise_identifier(find_catno):
+                                if catno is not None and catno == sanitise_identifier(find_catno):
                                     match = True
                                     break
 
@@ -2365,82 +2588,108 @@ def get_artist_mbid(discogs_id):
         return None
 
 
-def mb_find_release_by_discogs_release_link(discogs_id=0, discogs_release=None, discogs_client=None):
+def mb_browse_releases_by_discogs_release_link(discogs_id=0):
+    """Browse releases for a given Discogs URL
 
-    if not discogs_release and discogs_id and discogs_client:
-        discogs_release = discogs_client.release(discogs_id)
+    The expected result is either no matches or a single match. However
+    it is possible for more than one match to be found. Returns a list
+    of releases."""
 
-    discogs_url = f"https://www.discogs.com/release/{discogs_release.id}"
+    discogs_url = f"https://www.discogs.com/release/{discogs_id}"
+    offset = 0
+    batch_size = 25
+    max_releases = 200
+    releases = []
+    all_results = 0
 
     try:
-        mb_url = musicbrainzngs.browse_urls(
-            discogs_url,
-            includes=["release-rels"])
+        while all_results < max_releases:
+
+            mb_url = musicbrainzngs.browse_urls(
+                discogs_url,
+                includes=["release-rels"],
+                limit=batch_size,
+                offset=offset
+            )
+
+            url = mb_url.get('url')
+            release_relation_list = url.get('release-relation-list')
+
+            all_results += len(release_relation_list)
+
+            for release_relation in release_relation_list:
+                if release_relation.get('type') == 'discogs':
+                    release = release_relation.get('release')
+                    releases.append(release)
+
+            # Check if we've reached the end
+            if len(release_relation_list) < batch_size:
+                break
+
+            # Move to the next page
+            offset += batch_size
 
     except musicbrainzngs.musicbrainz.ResponseError:
         # probably 404
-        mb_url = None
+        pass
 
-    if not mb_url:
-        return None
+    except Exception as e:
+        print(e)
 
-    url = mb_url.get('url')
-    release_relation_list = url.get('release-relation-list')
-    if len(release_relation_list) == 1:
-        # we are only expecting 1 match, so return it
-        release_relation = release_relation_list[0]
-        if release_relation.get('type') == 'discogs':
-            release = release_relation.get('release')
-            print(f'🎯 matched {mb_summarise_release(id=release.get('id'))}')
-            return release
-    else:
-        # if there is more than 1 match, return the first one
-        print(f'❗️ unexpected number of matches for Discogs URL ({len(release_relation_list)})')
-        for release_relation in release_relation_list:
-            if release_relation.get('type') == 'discogs':
-                # return first release
-                release = release_relation.get('release')
-                print(f'❗️ matched {mb_summarise_release(id=release.get('id'))}')
-                return release
-
-    return None
+    finally:
+        return releases
 
 
-def mb_find_release_group_by_discogs_master_link(discogs_id=0, discogs_release=None, discogs_client=None):
+def mb_browse_release_groups_by_discogs_master_link(discogs_master_id=0):
+    """Browse release groups for a given Discogs master URL
 
-    if not discogs_release and discogs_id and discogs_client:
-        discogs_release = discogs_client.release(discogs_id)
+    The expected result is either no matches or a single match. However
+    it is possible for more than one match to be found. Returns a list
+    of release groups."""
 
-    discogs_url = f"https://www.discogs.com/master/{discogs_release.id}"
+    discogs_url = f"https://www.discogs.com/master/{discogs_master_id}"
+    offset = 0
+    batch_size = 25
+    max_release_groups = 200
+    release_groups = []
+    all_results = 0
 
     try:
-        mb_url = musicbrainzngs.browse_urls(
-            discogs_url,
-            includes=["release-group-rels"])
+        while all_results < max_release_groups:
+
+            mb_url = musicbrainzngs.browse_urls(
+                discogs_url,
+                includes=["release-group-rels"],
+                limit=batch_size,
+                offset=offset
+            )
+
+            url = mb_url.get('url')
+            release_group_relation_list = url.get('release_group-relation-list')
+
+            all_results += len(release_group_relation_list)
+
+            for release_relation in release_group_relation_list:
+                if release_relation.get('type') == 'discogs':
+                    release_group = release_relation.get('release-group')
+                    release_groups.append(release_group)
+
+            # Check if we've reached the end
+            if len(release_group_relation_list) < batch_size:
+                break
+
+            # Move to the next page
+            offset += batch_size
 
     except musicbrainzngs.musicbrainz.ResponseError:
-        # TODO: Raise appropriate exception. (URL doesn't exist.)
-        mb_url = None
+        # probably 404
+        pass
 
-    if not mb_url:
-        return None
+    except Exception as e:
+        print(e)
 
-    url = mb_url.get('url')
-    release_group_relation_list = url.get('release_group-relation-list')
-    if len(release_group_relation_list) == 1:
-        release_relation = release_group_relation_list[0]
-        if release_relation.get('type') == 'discogs':
-            release_group = release_relation.get('release-group')
-            return release_group
-    else:
-        for release_relation in release_group_relation_list:
-            if release_relation.get('type') == 'discogs':
-                # return first group
-                release_group = release_relation.get('release-group')
-                return release_group
-
-    # TODO: Raise appropriate exception. (No associated artists.)
-    return None
+    finally:
+        return release_groups
 
 
 def make_discogs_url(release_id=0, master_release_id=0):
@@ -2858,6 +3107,103 @@ def mb_find_release(artist='', title='', discogs_id=0, catno=None, primary_type=
         print(f"Error: {e}")
         # return []
         return None
+
+
+def mb_find_releases(artist='', title='', catno=None, primary_type=None, country=None, barcode=None, format=None):
+    """
+        Search for any releases matching the query
+
+        All these fields are searchable.
+
+        alias	        (part of) any alias attached to the release (diacritics are ignored)
+        arid	        the MBID of any of the release artists
+        artist	        (part of) the combined credited artist name for the release, including join phrases (e.g. "Artist X feat.")
+        artistname	    (part of) the name of any of the release artists
+        asin	        an Amazon ASIN for the release
+        barcode	        the barcode for the release
+        catno	        any catalog number for this release (insensitive to case, spaces, and separators)
+        comment	        (part of) the release's disambiguation comment
+        country	        the 2-letter code (ISO 3166-1 alpha-2) for any country the release was released in
+        creditname	    (part of) the credited name of any of the release artists on this particular release
+        date	        a release date for the release (e.g. "1980-01-22")
+        discids	        the total number of disc IDs attached to all mediums on the release
+        discidsmedium	the number of disc IDs attached to any one medium on the release
+        format	        the format of any medium in the release (insensitive to case, spaces, and separators)
+        laid	        the MBID of any of the release labels
+        label	        (part of) the name of any of the release labels
+        lang	        the ISO 639-3 code for the release language
+        mediums	        the number of mediums on the release
+        packaging	    the format of the release (insensitive to case, spaces, and separators)
+        primarytype	    the primary type of the release group for this release
+        quality	        the listed quality of the data for the release (2 for “high”, 1 for “normal”; cannot search for “low” at the moment; see the related bug report)
+        reid	        the release's MBID
+        release	        (part of) the release's title (diacritics are ignored)
+        releaseaccent	(part of) the release's title (with the specified diacritics)
+        rgid	        the MBID of the release group for this release
+        script	        the ISO 15924 code for the release script
+        secondarytype	any of the secondary types of the release group for this release
+        status	        the status of the release
+        tag	            (part of) a tag attached to the release
+        tracks	        the total number of tracks on the release
+        tracksmedium	the number of tracks on any one medium on the release
+        type	        legacy release group type field that predates the ability to set multiple types (see calculation code)
+    """
+    query = []
+
+    if artist:
+        query.append(f'artist:"{artist}"')
+
+    if title:
+        query.append(f'release:"{title}"')
+
+    if catno:
+        query.append(f'catno:"{catno}"')
+
+    if primary_type:
+        query.append(f'primarytype:"{primary_type}"')
+
+    if country:
+        query.append(f'country:{country}')
+
+    if barcode:
+        query.append(f'barcode:{barcode}')
+
+    if format:
+        query.append(f'format:{barcode}')
+
+    all_results = []
+    offset = 0
+    batch_size = 25
+    max_results = 200
+
+    query_string = ' AND '.join(query)
+    # print(f'query_string {query_string}')
+
+    try:
+        while len(all_results) < max_results:
+            # Fetch results with pagination
+            batch_releases = musicbrainzngs.search_releases(
+                query=query_string,
+                limit=batch_size,
+                offset=offset)
+
+            # Add new results
+            releases = batch_releases.get('release-list', [])
+            all_results.extend(releases)
+
+            # Check if we've reached the end
+            if len(releases) < batch_size:
+                break
+
+            # Move to the next page
+            offset += batch_size
+
+    except Exception as e:
+        print(f"Error: {e}")
+        all_results = []
+
+    finally:
+        return all_results
 
 
 def on_this_day(today_str=''):
