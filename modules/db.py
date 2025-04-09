@@ -9,7 +9,7 @@ from collections import namedtuple
 NAMED_TUPLES = True
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -62,10 +62,10 @@ def update_artist(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'artist', new_value, old_value))
+    print(row_change(release_id, 'artist', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET artist = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -75,10 +75,10 @@ def update_title(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'title', new_value, old_value))
+    print(row_change(release_id, 'title', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET title = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -89,10 +89,10 @@ def update_mb_id(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'mb_id', new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'mb_id', new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'mb_id', new_value, old_value))
+    print(row_change(release_id, 'mb_id', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_id = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -103,11 +103,11 @@ def update_mb_artist(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'mb_artist',
-                       new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'mb_artist',
+                                new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'mb_artist', new_value, old_value))
+    print(row_change(release_id, 'mb_artist', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_artist = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -118,10 +118,10 @@ def update_mb_title(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_change(release_id, 'mb_title', new_value, old_value, 'read-only'))
+        print(row_change(release_id, 'mb_title', new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'mb_title', new_value, old_value))
+    print(row_change(release_id, 'mb_title', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_title = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -132,10 +132,10 @@ def update_sort_name(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_change(release_id, 'sort_name', new_value, old_value, 'read-only'))
+        print(row_change(release_id, 'sort_name', new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'sort_name', new_value, old_value))
+    print(row_change(release_id, 'sort_name', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET sort_name = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -146,21 +146,21 @@ def update_release_date(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'release_date',
-                       new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'release_date',
+                                new_value, old_value, 'read-only'))
         return
 
     if old_value is not None and len(new_value) < len(old_value):
-        logger.warning(row_ignore_change(release_id, 'release_date',
-                       new_value, old_value, "ignored shorter"))
+        print(row_ignore_change(release_id, 'release_date',
+                                new_value, old_value, "ignored shorter"))
         return
 
     if old_value is not None and old_value < new_value:
-        logger.warning(row_ignore_change(release_id, 'release_date',
-                       new_value, old_value, "ignored newer"))
+        print(row_ignore_change(release_id, 'release_date',
+                                new_value, old_value, "ignored newer"))
         return
 
-    logger.debug(row_change(release_id, 'release_date', new_value, old_value))
+    print(row_change(release_id, 'release_date', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET release_date = ? WHERE release_id = ?',
                     (new_value, release_id))
@@ -172,10 +172,10 @@ def update_country(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'country', new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'country', new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'country', new_value, old_value))
+    print(row_change(release_id, 'country', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET country = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -186,10 +186,10 @@ def update_format(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'format', new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'format', new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'format', new_value, old_value))
+    print(row_change(release_id, 'format', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET format = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -200,11 +200,11 @@ def update_mb_primary_type(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'mb_primary_type',
-                       new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'mb_primary_type',
+                                new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'mb_primary_type', new_value, old_value))
+    print(row_change(release_id, 'mb_primary_type', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_primary_type = ? WHERE release_id = ?',
                     (new_value, release_id))
@@ -216,11 +216,11 @@ def update_version_id(release_id, new_value, old_value, config):
         return
 
     if config.dry_run:
-        logger.warning(row_ignore_change(release_id, 'version_id',
-                       new_value, old_value, 'read-only'))
+        print(row_ignore_change(release_id, 'version_id',
+                                new_value, old_value, 'read-only'))
         return
 
-    logger.debug(row_change(release_id, 'version_id', new_value, old_value))
+    print(row_change(release_id, 'version_id', new_value, old_value))
     with db_ops(config) as cur:
         cur.execute('UPDATE items SET version_id = ? WHERE release_id = ?',
                     (new_value, release_id))
@@ -251,7 +251,7 @@ def insert_row(
         config=None):
 
     if config.dry_run:
-        logger.warning('dry run - not inserted')
+        print('dry run - not inserted')
         return
 
     with db_ops(config) as cur:

@@ -65,7 +65,7 @@ except FileNotFoundError:
 
 
 def signal_handler(sig, frame):
-    logger.info('You pressed Ctrl+C!')
+    print('You pressed Ctrl+C!')
     sys.exit(0)
 
 
@@ -619,9 +619,9 @@ def find_match_by_discogs_link(discogs_release=None):
     elif len(releases) == 1:
         mb_release = releases[0]
         # we are only expecting 1 match
-        logger.debug(f'🎯 matched {mb_summarise_release(id=mb_release.get('id'))}')
+        print(f'🎯 matched {mb_summarise_release(id=mb_release.get('id'))}')
     else:
-        logger.warning(f'❗️ unexpected number of matches for Discogs URL ({len(releases)})')
+        print(f'❗️ unexpected number of matches for Discogs URL ({len(releases)})')
 
         best_match_score = 0
         best_match_release = None
@@ -643,11 +643,11 @@ def find_match_by_discogs_link(discogs_release=None):
 
         if best_match_score == 100:
             mb_release = best_match_release
-            logger.debug(
+            print(
                 f'💯 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
         elif best_match_score > 0:
             mb_release = best_match_release
-            logger.debug(
+            print(
                 f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
         else:
             mb_release = None
@@ -936,8 +936,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         if not release_date:
             release_date = mb_release.get('date')
     else:
-        logging.warning(
-            f'❌ no match for {discogs_summarise_release(discogs_release=discogs_release)}')
+        print(f'❌ no match for {discogs_summarise_release(discogs_release=discogs_release)}')
         version_id = 0
 
     row = db.fetch_row_by_discogs_id(discogs_release.id, config)
@@ -1164,7 +1163,7 @@ def match(config=None):
 
         rows = cur.fetchall()
         if len(rows) == 0:
-            logging.warning('no matching items')
+            print('no matching items')
             return
 
         if config.release_date:
@@ -1229,7 +1228,7 @@ def match(config=None):
                     set_date = date_object.strftime("%Y")
 
             if not set_date:
-                logging.warning(f'invalid date {config.release_date}')
+                print(f'invalid date {config.release_date}')
                 return
 
         if set_date:
@@ -1441,16 +1440,6 @@ def output_row(row):
         print(f'release_date    : {parse_and_humanize_date(row.release_date)}')
 
 
-def update_mb_id(release_id, mb_id, config=None):
-
-    if config.dry_run:
-        logging.warning('dry run - not updated')
-        return
-
-    with db.db_ops(config) as cur:
-        cur.execute('UPDATE items SET mb_id = ? WHERE release_id = ?', (mb_id, release_id))
-
-
 def parse_date(date_str):
     if date_str and not isinstance(date_str, str):
         date_str = str(date_str)
@@ -1554,7 +1543,7 @@ def update_table(config=None):
             update_row(discogs_client, discogs_id=int(config.discogs_id),
                        version_id=max_version_id, config=config)
         else:
-            logging.error(f'discogs_id {config.discogs_id} not found')
+            print(f'discogs_id {config.discogs_id} not found')
 
     elif config.mbid:
         row = db.fetch_row_by_mb_id(config.mbid, config=config)
@@ -1562,7 +1551,7 @@ def update_table(config=None):
             update_row(discogs_client, discogs_id=row.release_id,
                        mb_id=config.mbid, max_version_id=max_version_id, config=config)
         else:
-            logging.error(f'MBID {config.mbid} not found')
+            print(f'MBID {config.mbid} not found')
 
     else:
 
@@ -1601,7 +1590,7 @@ def scrape_discogs(discogs_id=0, mb_id=None, config=None):
             print(f'update {db_summarise_row(row=row)}')
             scrape_row(discogs_client=discogs_client, row=row, discogs_id=int(discogs_id))
         else:
-            logging.error(f'discogs_id {discogs_id} not found')
+            print(f'discogs_id {discogs_id} not found')
 
     elif mb_id:
         row = db.fetch_row_by_mb_id(mb_id, config=config)
@@ -1609,7 +1598,7 @@ def scrape_discogs(discogs_id=0, mb_id=None, config=None):
             print(f'update {db_summarise_row(row=row)}')
             scrape_row(discogs_client=discogs_client, row=row)
         else:
-            logging.error(f'MBID {mb_id} not found')
+            print(f'MBID {mb_id} not found')
 
     else:
 
