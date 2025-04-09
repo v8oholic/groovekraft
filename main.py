@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+# CLI entry point
+
 import discogs_client
 from discogs_client.exceptions import HTTPError
 import musicbrainzngs
@@ -21,6 +23,9 @@ import datetime
 import dateparser
 import dateutil
 from contextlib import contextmanager
+import json
+import logging
+from modules.utils import normalize_country_name
 
 USER_AGENT = 'v8oholic_collection_application/1.0'
 
@@ -31,335 +36,36 @@ MUSICBRAINZ_USERNAME = 'v8oholic'
 MUSICBRAINZ_PASSWORD = 'copdEs-3mezto-horvox'
 
 NAMED_TUPLES = True
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
 
 DATABASE_NAME = 'discogs.db'
 
 # Discogs -> MusicBrainz mapping
 
-MediaTypes = {
-    '8-Track Cartridge': 'Cartridge',
-    'Acetate': 'Acetate',
-    'Acetate7"': '7" Acetate',
-    'Acetate10"': '10" Acetate',
-    'Acetate12"': '12" Acetate',
-    'Betamax': 'Betamax',
-    'Blu-ray': 'Blu-ray',
-    'Blu-ray-R': 'Blu-ray',
-    'Cassette': 'Cassette',
-    'CD': 'CD',
-    'CDr': 'CD-R',
-    'CDV': 'CDV',
-    'CD+G': 'CD+G',
-    'Cylinder': 'Wax Cylinder',
-    'DAT': 'DAT',
-    'Datassette': 'Other',
-    'DCC': 'DCC',
-    'DVD': 'DVD',
-    'DVDr': 'DVD',
-    'DVD-Audio': 'DVD-Audio',
-    'DVD-Video': 'DVD-Video',
-    'Edison Disc': 'Vinyl',
-    'File': 'Digital Media',
-    'Flexi-disc': 'Vinyl',
-    'Floppy Disk': 'Other',
-    'HDCD': 'HDCD',
-    'HD DVD': 'HD-DVD',
-    'HD DVD-R': 'HD-DVD',
-    'Hybrid': 'Other',
-    'Laserdisc': 'LaserDisc',
-    'Memory Stick': 'USB Flash Drive',
-    'Microcassette': 'Other',
-    'Minidisc': 'MiniDisc',
-    'MVD': 'Other',
-    'Reel-To-Reel': 'Reel-to-reel',
-    'SACD': 'SACD',
-    'SelectaVision': 'Other',
-    'Shellac': 'Shellac',
-    'Shellac7"': '7" Shellac',
-    'Shellac10"': '10" Shellac',
-    'Shellac12"': '12" Shellac',
-    'SVCD': 'SVCD',
-    'UMD': 'UMD',
-    'VCD': 'VCD',
-    'VHS': 'VHS',
-    'Video 2000': 'Other',
-    'Vinyl': 'Vinyl',
-    'Vinyl7"': '7" Vinyl',
-    'Vinyl10"': '10" Vinyl',
-    'Vinyl12"': '12" Vinyl',
-    'Lathe Cut': 'Phonograph record',
+SCORE_WEIGHTS = {
+    "artist": 2,
+    "title": 2,
+    "country": 2,
+    "format": 2,
+    "barcode": 2,
+    "no_barcode": 1,
+    "catno": 2,
+    "no_catno": 1,
 }
 
-countries = {
-    'Afghanistan': 'AF',
-    'Albania': 'AL',
-    'Algeria': 'DZ',
-    'American Samoa': 'AS',
-    'Andorra': 'AD',
-    'Angola': 'AO',
-    'Anguilla': 'AI',
-    'Antarctica': 'AQ',
-    'Antigua and Barbuda': 'AG',
-    'Argentina': 'AR',
-    'Armenia': 'AM',
-    'Aruba': 'AW',
-    'Australia': 'AU',
-    'Austria': 'AT',
-    'Azerbaijan': 'AZ',
-    'Bahamas': 'BS',
-    'Bahrain': 'BH',
-    'Bangladesh': 'BD',
-    'Barbados': 'BB',
-    'Barbados, The': 'BB',
-    'Belarus': 'BY',
-    'Belgium': 'BE',
-    'Belize': 'BZ',
-    'Benelux': 'XB',  # TODO this may be insufficient because the individual countries BE NL LU should really be used
-    'Benin': 'BJ',
-    'Bermuda': 'BM',
-    'Bhutan': 'BT',
-    'Bolivia': 'BO',
-    'Croatia': 'HR',
-    'Botswana': 'BW',
-    'Bouvet Island': 'BV',
-    'Brazil': 'BR',
-    'British Indian Ocean Territory': 'IO',
-    'Brunei Darussalam': 'BN',
-    'Bulgaria': 'BG',
-    'Burkina Faso': 'BF',
-    'Burundi': 'BI',
-    'Cambodia': 'KH',
-    'Cameroon': 'CM',
-    'Canada': 'CA',
-    'Cape Verde': 'CV',
-    'Cayman Islands': 'KY',
-    'Central African Republic': 'CF',
-    'Chad': 'TD',
-    'Chile': 'CL',
-    'China': 'CN',
-    'Christmas Island': 'CX',
-    'Cocos (Keeling) Islands': 'CC',
-    'Colombia': 'CO',
-    'Comoros': 'KM',
-    'Congo': 'CG',
-    'Cook Islands': 'CK',
-    'Costa Rica': 'CR',
-    'Virgin Islands, British': 'VG',
-    'Cuba': 'CU',
-    'Cyprus': 'CY',
-    'Czech Republic': 'CZ',
-    'Denmark': 'DK',
-    'Djibouti': 'DJ',
-    'Dominica': 'DM',
-    'Dominican Republic': 'DO',
-    'Ecuador': 'EC',
-    'Egypt': 'EG',
-    'El Salvador': 'SV',
-    'Equatorial Guinea': 'GQ',
-    'Eritrea': 'ER',
-    'Estonia': 'EE',
-    'Ethiopia': 'ET',
-    'Falkland Islands (Malvinas)': 'FK',
-    'Faroe Islands': 'FO',
-    'Fiji': 'FJ',
-    'Finland': 'FI',
-    'France': 'FR',
-    'French Guiana': 'GF',
-    'French Polynesia': 'PF',
-    'French Southern Territories': 'TF',
-    'Gabon': 'GA',
-    'Gambia': 'GM',
-    'Georgia': 'GE',
-    'Germany': 'DE',
-    'Ghana': 'GH',
-    'Gibraltar': 'GI',
-    'Greece': 'GR',
-    'Greenland': 'GL',
-    'Grenada': 'GD',
-    'Guadeloupe': 'GP',
-    'Guam': 'GU',
-    'Guatemala': 'GT',
-    'Guinea': 'GN',
-    'Guinea-Bissau': 'GW',
-    'Guyana': 'GY',
-    'Haiti': 'HT',
-    'Virgin Islands, U.S.': 'VI',
-    'Honduras': 'HN',
-    'Hong Kong': 'HK',
-    'Hungary': 'HU',
-    'Iceland': 'IS',
-    'India': 'IN',
-    'Indonesia': 'ID',
-    'Wallis and Futuna': 'WF',
-    'Iraq': 'IQ',
-    'Ireland': 'IE',
-    'Israel': 'IL',
-    'Italy': 'IT',
-    'Jamaica': 'JM',
-    'Japan': 'JP',
-    'Jordan': 'JO',
-    'Kazakhstan': 'KZ',
-    'Kenya': 'KE',
-    'Kiribati': 'KI',
-    'Kuwait': 'KW',
-    'Kyrgyzstan': 'KG',
-    "Lao People's Democratic Republic": 'LA',
-    'Latvia': 'LV',
-    'Lebanon': 'LB',
-    'Lesotho': 'LS',
-    'Liberia': 'LR',
-    'Libyan Arab Jamahiriya': 'LY',
-    'Liechtenstein': 'LI',
-    'Lithuania': 'LT',
-    'Luxembourg': 'LU',
-    'Montserrat': 'MS',
-    'Macedonia': 'MK',
-    'Madagascar': 'MG',
-    'Malawi': 'MW',
-    'Malaysia': 'MY',
-    'Maldives': 'MV',
-    'Mali': 'ML',
-    'Malta': 'MT',
-    'Marshall Islands': 'MH',
-    'Martinique': 'MQ',
-    'Mauritania': 'MR',
-    'Mauritius': 'MU',
-    'Mayotte': 'YT',
-    'Mexico': 'MX',
-    'Micronesia, Federated States of': 'FM',
-    'Morocco': 'MA',
-    'Monaco': 'MC',
-    'Mongolia': 'MN',
-    'Mozambique': 'MZ',
-    'Myanmar': 'MM',
-    'Namibia': 'NA',
-    'Nauru': 'NR',
-    'Nepal': 'NP',
-    'Netherlands': 'NL',
-    'Netherlands Antilles': 'AN',
-    'New Caledonia': 'NC',
-    'New Zealand': 'NZ',
-    'Nicaragua': 'NI',
-    'Niger': 'NE',
-    'Nigeria': 'NG',
-    'Niue': 'NU',
-    'Norfolk Island': 'NF',
-    'Northern Mariana Islands': 'MP',
-    'Norway': 'NO',
-    'Oman': 'OM',
-    'Pakistan': 'PK',
-    'Palau': 'PW',
-    "Pakistan": "PK",
-    "Palau": "PW",
-    "Panama": "PA",
-    "Papua New Guinea": "PG",
-    "Paraguay": "PY",
-    "Peru": "PE",
-    "Philippines": "PH",
-    "Pitcairn": "PN",
-    "Poland": "PL",
-    "Portugal": "PT",
-    "Puerto Rico": "PR",
-    "Qatar": "QA",
-    "Reunion": "RE",
-    "Romania": "RO",
-    "Russian Federation": "RU",
-    "Russia": "RU",
-    "Rwanda": "RW",
-    "Saint Kitts and Nevis": "KN",
-    "Saint Lucia": "LC",
-    "Saint Vincent and The Grenadines": "VC",
-    "Samoa": "WS",
-    "San Marino": "SM",
-    "Sao Tome and Principe": "ST",
-    "Saudi Arabia": "SA",
-    "Senegal": "SN",
-    "Seychelles": "SC",
-    "Sierra Leone": "SL",
-    "Singapore": "SG",
-    "Slovenia": "SI",
-    "Solomon Islands": "SB",
-    "Somalia": "SO",
-    "South Africa": "ZA",
-    "Spain": "ES",
-    "Sri Lanka": "LK",
-    "Sudan": "SD",
-    "Suriname": "SR",
-    "Swaziland": "SZ",
-    "Sweden": "SE",
-    "Switzerland": "CH",
-    "Syrian Arab Republic": "SY",
-    "Tajikistan": "TJ",
-    "Tanzania, United Republic of": "TZ",
-    "Thailand": "TH",
-    "Togo": "TG",
-    "Tokelau": "TK",
-    "Tonga": "TO",
-    "Trinidad & Tobago": "TT",
-    "Tunisia": "TN",
-    "Turkey": "TR",
-    "Turkmenistan": "TM",
-    "Turks and Caicos Islands": "TC",
-    "Tuvalu": "TV",
-    "Uganda": "UG",
-    "Ukraine": "UA",
-    "United Arab Emirates": "AE",
-    "UK": "GB",
-    "UK and Europe": "XE",
-    "UK & Europe": "XE",
-    "UK & Ireland": "GB",  # TODO added, should really be GB and IE
-    "US": "US",
-    "United States Minor Outlying Islands": "UM",
-    "Uruguay": "UY",
-    "Uzbekistan": "UZ",
-    "Vanuatu": "VU",
-    "Vatican City State (Holy See)": "VA",
-    "Venezuela": "VE",
-    "Viet Nam": "VN",
-    "Western Sahara": "EH",
-    "Yemen": "YE",
-    "Zambia": "ZM",
-    "Zimbabwe": "ZW",
-    "Taiwan": "TW",
-    "[Worldwide]": "XW",
-    "Worldwide": "XW",
-    "Europe": "XE",
-    "USSR": "SU",
-    "East Germany (historical, 1949-1990)": "XG",
-    "Czechoslovakia": "XC",
-    "Congo, Republic of the": "CD",
-    "Slovakia": "SK",
-    "Bosnia & Herzegovina": "BA",
-    "Korea (North), Democratic People's Republic of": "KP",
-    "North Korea": "KP",
-    "Korea (South), Republic of": "KR",
-    "South Korea": "KR",
-    "Montenegro": "ME",
-    "South Georgia and the South Sandwich Islands": "GS",
-    "Palestinian Territory": "PS",
-    "Macao": "MO",
-    "Timor-Leste": "TL",
-    "<85>land Islands": "AX",
-    "Guernsey": "GG",
-    "Isle of Man": "IM",
-    "Jersey": "JE",
-    "Serbia": "RS",
-    "Saint Barthélemy": "BL",
-    "Saint Martin": "MF",
-    "Moldova": "MD",
-    "Yugoslavia": "YU",
-    "Serbia and Montenegro": "CS",
-    "Côte d'Ivoire": "CI",
-    "Heard Island and McDonald Islands": "HM",
-    "Iran, Islamic Republic of": "IR",
-    "Saint Pierre and Miquelon": "PM",
-    "Saint Helena": "SH",
-    "Svalbard and Jan Mayen": "SJ",
-}
+MAXIMUM_SCORE = 12
+
+
+with open("config/countries.json", "r", encoding="utf-8") as f:
+    COUNTRIES = json.load(f)
+
+with open("config/mediatypes.json", "r", encoding="utf-8") as f:
+    MEDIATYPES = json.load(f)
 
 
 def signal_handler(sig, frame):
-    print('You pressed Ctrl+C!')
+    logger.info('You pressed Ctrl+C!')
     sys.exit(0)
 
 
@@ -408,17 +114,14 @@ def disambiguator_score(discogs_release=None, discogs_id=None, mb_release=None, 
     load_mbid = None
 
     if mb_release:
-        x = mb_release.get('label-info-count')
-        if not x:
-            load_mbid = mb_release.get('id')
-        x = mb_release.get('artist-credit-phrase')
-        if not x:
-            load_mbid = mb_release.get('id')
-        x = mb_release.get('medium-list')
-        if not x:
+        if not all([
+            mb_release.get('label-info-count'),
+            mb_release.get('artist-credit-phrase'),
+            mb_release.get('medium-list')
+        ]):
             load_mbid = mb_release.get('id')
     else:
-        load_mbid = id
+        load_mbid = mb_id
 
     if mb_release is None and load_mbid == 0:
         raise Exception("Unable to load MusicBrainz release")
@@ -437,22 +140,23 @@ def disambiguator_score(discogs_release=None, discogs_id=None, mb_release=None, 
     format_score = 0
     barcode_score = 0
     catno_score = 0
-    maximum_points = 12
 
     artist = trim_if_ends_with_number_in_brackets(discogs_release.artists[0].name)
     if artist == 'Various':
         artist = 'Various Artists'
     artist = artist.casefold()
     if artist == mb_release.get('artist-credit-phrase').casefold():
-        artist_score = 2
+        artist_score = SCORE_WEIGHTS['artist']
 
     title = discogs_release.title.casefold()
     if title == mb_release.get('title').casefold():
-        title_score = 2
+        artist_score = SCORE_WEIGHTS['title']
 
-    country = countries.get(discogs_release.country)
-    if country == mb_release.get('country'):
-        country_score = 2
+    country = COUNTRIES.get(normalize_country_name(discogs_release.country))
+    if not country:
+        logger.warning(f"⚠️ Unknown country mapping for: {discogs_release.country}")
+    elif country == mb_release.get('country'):
+        country_score = SCORE_WEIGHTS['country']
 
     _, _, mb_format = convert_format(discogs_release.formats[0])
     media = mb_release.get('medium-list')
@@ -462,7 +166,7 @@ def disambiguator_score(discogs_release=None, discogs_id=None, mb_release=None, 
         if format in ['Enhanced CD', 'Copy Control CD', 'HDCD']:
             format = 'CD'
         if format == mb_format:
-            format_score = 2
+            format_score = SCORE_WEIGHTS['format']
 
     barcodes = []
     discogs_identifiers = discogs_release.fetch('identifiers')
@@ -475,31 +179,31 @@ def disambiguator_score(discogs_release=None, discogs_id=None, mb_release=None, 
         release_barcode = sanitise_identifier(release_barcode)
         for barcode in barcodes:
             if barcode == release_barcode:
-                barcode_score = 2
+                barcode_score = SCORE_WEIGHTS['barcode']
                 break
     else:
         # if barcode is missing from either or both, assume still possible match
-        barcode_score = 1
+        barcode_score = SCORE_WEIGHTS['no_barcode']
 
     catnos = list(set([sanitise_identifier(x.data['catno']) for x in discogs_release.labels]))
     mb_catnos = []
     for label_info in mb_release.get('label-info-list'):
         find_catno = label_info.get('catalog-number')
         mb_catnos.append(find_catno)
-    mb_catnos = list(set(catnos))
+    mb_catnos = list(set(mb_catnos))
     if catnos and mb_catnos:
         for catno in catnos:
             for label_info in mb_release.get('label-info-list'):
                 find_catno = label_info.get('catalog-number')
                 if find_catno and catno == sanitise_identifier(find_catno):
-                    catno_score = 2
+                    catno_score = SCORE_WEIGHTS['catno']
                     break
     else:
-        catno_score = 1
+        catno_score = SCORE_WEIGHTS['no_catno']
 
     total_points = artist_score+title_score+country_score+format_score+catno_score+barcode_score
 
-    return round(100 * total_points/maximum_points)
+    return round(100 * total_points/MAXIMUM_SCORE)
 
 
 def scrape_table(url):
@@ -519,7 +223,7 @@ def scrape_table(url):
         # table = driver.find_element(By.TAG_NAME, 'table_c5ftk')
         table = driver.find_element(By.CLASS_NAME, 'table_c5ftk')
         if not table:
-            print(f"No table found at {url}")
+            logger.warning(f"No table found at {url}")
             return None
 
         # Extract headers
@@ -539,7 +243,7 @@ def scrape_table(url):
         return pd.DataFrame([rows], columns=table_headers) if table_headers else pd.DataFrame(rows)
 
     except Exception as e:
-        print(f"Error scraping {url}: {e}")
+        logger.error(f"Error scraping {url}: {e}")
         return None
     finally:
         driver.quit()  # Close the browser session after scraping
@@ -760,7 +464,7 @@ def connect_to_discogs(oauth_token=None, ouath_token_secret=None):
             authenticated = True
 
         except HTTPError:
-            print("Unable to authenticate.")
+            logger.error("Unable to authenticate.")
             access_token = None
             access_secret = None
 
@@ -773,10 +477,9 @@ def connect_to_discogs(oauth_token=None, ouath_token_secret=None):
         client.set_consumer_key(DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET)
         token, secret, url = client.get_authorize_url()
 
-        print(" == Request Token == ")
-        print(f"    * oauth_token        = {token}")
-        print(f"    * oauth_token_secret = {secret}")
-        print()
+        logger.debug(" == Request Token == ")
+        logger.debug(f"    * oauth_token        = {token}")
+        logger.debug(f"    * oauth_token_secret = {secret}")
 
         # visit the URL in auth_url to allow the app to connect
 
@@ -844,10 +547,10 @@ def db_update_artist(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
+        logger.warning(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'artist', new_value, old_value))
+    logger.debug(row_change(release_id, 'artist', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET artist = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -859,10 +562,10 @@ def db_update_title(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
+        logger.warning(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'title', new_value, old_value))
+    logger.debug(row_change(release_id, 'title', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET title = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -874,10 +577,10 @@ def db_update_mb_id(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'mb_id', new_value, old_value, 'read-only'))
+        logger.warning(row_ignore_change(release_id, 'mb_id', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'mb_id', new_value, old_value))
+    logger.debug(row_change(release_id, 'mb_id', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET mb_id = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -889,10 +592,11 @@ def db_update_mb_artist(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'mb_artist', new_value, old_value, 'read-only'))
+        logger.warning(row_ignore_change(release_id, 'mb_artist',
+                       new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'mb_artist', new_value, old_value))
+    logger.debug(row_change(release_id, 'mb_artist', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET mb_artist = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -904,10 +608,10 @@ def db_update_mb_title(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'mb_title', new_value, old_value, 'read-only'))
+        logger.warning(row_change(release_id, 'mb_title', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'mb_title', new_value, old_value))
+    logger.debug(row_change(release_id, 'mb_title', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET mb_title = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -919,10 +623,10 @@ def db_update_sort_name(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'sort_name', new_value, old_value, 'read-only'))
+        logger.warning(row_change(release_id, 'sort_name', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'sort_name', new_value, old_value))
+    logger.debug(row_change(release_id, 'sort_name', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET sort_name = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -934,18 +638,20 @@ def db_update_release_date(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'release_date', new_value, old_value, 'read-only'))
+        logger.warning(row_change(release_id, 'release_date', new_value, old_value, 'read-only'))
         return
 
     if old_value is not None and len(new_value) < len(old_value):
-        print(row_ignore_change(release_id, 'release_date', new_value, old_value, "ignored shorter"))
+        logger.warning(row_change(release_id, 'release_date',
+                       new_value, old_value, "ignored shorter"))
         return
 
     if old_value is not None and old_value < new_value:
-        print(row_ignore_change(release_id, 'release_date', new_value, old_value, "ignored newer"))
+        logger.warning(row_change(release_id, 'release_date',
+                       new_value, old_value, "ignored newer"))
         return
 
-    print(row_change(release_id, 'release_date', new_value, old_value))
+    logger.debug(row_change(release_id, 'release_date', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET release_date = ? WHERE release_id = ?',
                     (new_value, release_id))
@@ -958,10 +664,10 @@ def db_update_country(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'country', new_value, old_value, 'read-only'))
+        logger.warning(row_change(release_id, 'country', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'country', new_value, old_value))
+    logger.debug(row_change(release_id, 'country', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET country = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -973,10 +679,10 @@ def db_update_format(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'format', new_value, old_value, 'read-only'))
+        logger.warning(row_change(release_id, 'format', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'format', new_value, old_value))
+    logger.debug(row_change(release_id, 'format', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET format = ? WHERE release_id = ?', (new_value, release_id))
 
@@ -988,10 +694,10 @@ def db_update_mb_primary_type(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'mb_primary_type', new_value, old_value, 'read-only'))
+        logger.warning(row_change(release_id, 'mb_primary_type', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'mb_primary_type', new_value, old_value))
+    logger.debug(row_change(release_id, 'mb_primary_type', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET mb_primary_type = ? WHERE release_id = ?',
                     (new_value, release_id))
@@ -1004,10 +710,10 @@ def db_update_version_id(release_id, new_value, old_value):
         return
 
     if args.dry_run:
-        print(row_ignore_change(release_id, 'version_id', new_value, old_value, 'read-only'))
+        logger.warning(row_change(release_id, 'version_id', new_value, old_value, 'read-only'))
         return
 
-    print(row_change(release_id, 'version_id', new_value, old_value))
+    logger.debug(row_change(release_id, 'version_id', new_value, old_value))
     with db_ops(DATABASE_NAME) as cur:
         cur.execute('UPDATE items SET version_id = ? WHERE release_id = ?',
                     (new_value, release_id))
@@ -1026,7 +732,7 @@ def db_insert_row(artist=None, title=None, format=None, mb_primary_type=None, re
     global args
 
     if args.dry_run:
-        print('dry run - not inserted')
+        logger.warning('dry run - not inserted')
         return
 
     with db_ops(DATABASE_NAME) as cur:
@@ -1072,7 +778,7 @@ def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
     release_url = discogs_release.url
 
     # scrape the release first
-    print(release_url.split('/')[-1])
+    logger.debug(release_url.split('/')[-1])
     df = scrape_table(release_url)
     if df is not None:
         # Save to CSV if needed
@@ -1111,7 +817,7 @@ def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
                             release_date_str = ''
 
         except Exception as e:
-            print(f"No release date on release")
+            logger.warning(f"No release date on release")
             release_date_str = ''
         finally:
 
@@ -1205,10 +911,8 @@ def convert_format(discogs_format):
             format = "EP Box Set"
             mb_primary_type = 'single'
         elif 'Single' in secondary_types:
-            print('CD Single Box Set')
             mb_primary_type = 'single'
         elif 'Maxi-Single' in secondary_types:
-            print('CD Single Box Set')
             mb_primary_type = 'single'
         else:
             format = 'Box Set'
@@ -1256,7 +960,7 @@ def mb_get_releases_for_release_group(mb_id):
             batch_offset += batch_size
 
     except Exception as e:
-        print(e)
+        logger.error(e)
         release_list = []
 
     finally:
@@ -1280,9 +984,9 @@ def find_match_by_discogs_link(discogs_release=None):
     elif len(releases) == 1:
         mb_release = releases[0]
         # we are only expecting 1 match
-        print(f'🎯 matched {mb_summarise_release(id=mb_release.get('id'))}')
+        logger.debug(f'🎯 matched {mb_summarise_release(id=mb_release.get('id'))}')
     else:
-        # print(f'❗️ unexpected number of matches for Discogs URL ({len(releases)})')
+        logger.warning(f'❗️ unexpected number of matches for Discogs URL ({len(releases)})')
 
         best_match_score = 0
         best_match_release = None
@@ -1304,10 +1008,12 @@ def find_match_by_discogs_link(discogs_release=None):
 
         if best_match_score == 100:
             mb_release = best_match_release
-            print(f'💯 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+            logger.debug(
+                f'💯 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
         elif best_match_score > 0:
             mb_release = best_match_release
-            print(f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+            logger.debug(
+                f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
         else:
             mb_release = None
 
@@ -1354,7 +1060,7 @@ def find_match_by_discogs_link(discogs_release=None):
             disambiguation_score = disambiguator_score(
                 discogs_release=discogs_release, mb_release=release)
 
-            # print(f'{disambiguation_score:3}% {mb_summarise_release(release)}')
+            # logger.debug(f'{disambiguation_score:3}% {mb_summarise_release(release)}')
 
             if disambiguation_score == 100:
                 # pefect match
@@ -1416,7 +1122,7 @@ def find_match_by_discogs_link(discogs_release=None):
             batch_offset += batch_size
 
     except Exception as e:
-        print(e)
+        logging.error(e)
         rels = []
 
     if not release_list:
@@ -1470,7 +1176,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     print(f'⚙️ {discogs_summarise_release(discogs_release=discogs_release)}')
 
     country = discogs_release.country
-    mb_country = countries.get(country)
+    mb_country = COUNTRIES.get(normalize_country_name(country))
 
     label_names = [x.data['name'] for x in discogs_release.labels]
     label_catnos = list(set([sanitise_identifier(x.data['catno']) for x in discogs_release.labels]))
@@ -1586,7 +1292,8 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
             print(f'💯 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
         elif best_match_score > 0:
             mb_release = best_match_release
-            print(f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
+            print(
+                f'📈 {best_match_score}% disambiguation {mb_summarise_release(id=mb_release.get('id'))}')
         else:
             mb_release = None
 
@@ -1594,7 +1301,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         if not release_date:
             release_date = mb_release.get('date')
     else:
-        print(
+        logging.warning(
             f'❌ no match for {discogs_summarise_release(discogs_release=discogs_release)}')
         version_id = 0
 
@@ -1698,11 +1405,11 @@ def import_from_discogs(discogs_id=None, all_rows=False, new_rows=False):
         musicbrainz.auth(MUSICBRAINZ_USERNAME, MUSICBRAINZ_PASSWORD)
 
     except HTTPError:
-        print("Unable to authenticate to Discogs.")
+        logging.error("Unable to authenticate to Discogs.")
         sys.exit(1)
 
     except Exception as e:
-        print(f'MusicBrainz authentication error {e}')
+        logging.error(f'MusicBrainz authentication error {e}')
         sys.exit(1)
 
     musicbrainzngs.set_rate_limit(1, 1)
@@ -1717,14 +1424,13 @@ def import_from_discogs(discogs_id=None, all_rows=False, new_rows=False):
     # fetch the identity object for the current logged in user.
     discogs_user = discogs_client.identity()
 
-    print()
-    print(" == User ==")
-    print(f"    * username           = {discogs_user.username}")
-    print(f"    * name               = {discogs_user.name}")
-    print(" == Access Token ==")
-    print(f"    * oauth_token        = {discogs_access_token}")
-    print(f"    * oauth_token_secret = {discogs_access_secret}")
-    print(" Authentication complete. Future requests will be signed with the above tokens.")
+    logging.debug(" == User ==")
+    logging.debug(f"    * username           = {discogs_user.username}")
+    logging.debug(f"    * name               = {discogs_user.name}")
+    logging.debug(" == Access Token ==")
+    logging.debug(f"    * oauth_token        = {discogs_access_token}")
+    logging.debug(f"    * oauth_token_secret = {discogs_access_secret}")
+    logging.debug(" Authentication complete. Future requests will be signed with the above tokens.")
 
     # get the highest version number, which will be used for all updates
     max_version_id = 0
@@ -1782,7 +1488,7 @@ def open_db():
     with db_ops(DATABASE_NAME) as cur:
         res = cur.execute("SELECT name FROM sqlite_master WHERE name='items'")
         if res.fetchone() is None:
-            print("creating table")
+            logging.debug("creating table")
             cur.execute(
                 "CREATE TABLE items(artist, title, format, release_id, release_date, country, mb_id, mb_artist, mb_title, sort_name, version_id)")
             cur.execute("CREATE UNIQUE INDEX idx_items_release_id ON items(release_id)")
@@ -1823,7 +1529,7 @@ def match(text, release_date=None):
 
         rows = cur.fetchall()
         if len(rows) == 0:
-            print('no matching items')
+            logging.warning('no matching items')
             return
 
         if release_date:
@@ -1888,7 +1594,7 @@ def match(text, release_date=None):
                     set_date = date_object.strftime("%Y")
 
             if not set_date:
-                print(f'invalid date {release_date}')
+                logging.warning(f'invalid date {release_date}')
                 return
 
         if set_date:
@@ -1949,13 +1655,12 @@ def match(text, release_date=None):
                     format_len = max(format_len, len(format))
                     release_date_len = max(release_date_len, len(release_date))
                 else:
-                    # print(
+                    # logging.debug(
                     #     f"{row.release_id:>8} {artist:20} {title:20} {format:10} {release_date:10}")
-                    # print(
+                    # logging.debug(
                     #     f'{row.release_id:>8} {fls(artist, artist_len)} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
                     if artist != last_artist:
                         last_artist = artist
-                        print()
                         print(artist)
                         print('='*len(artist))
 
@@ -2109,7 +1814,7 @@ def update_mb_id(release_id, mb_id):
     global args
 
     if args.dry_run:
-        print('dry run - not updated')
+        logging.warning('dry run - not updated')
         return
 
     with db_ops(DATABASE_NAME) as cur:
@@ -2179,11 +1884,11 @@ def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, re
         musicbrainz.auth(MUSICBRAINZ_USERNAME, MUSICBRAINZ_PASSWORD)
 
     except HTTPError:
-        print("Unable to authenticate to Discogs.")
+        logging.error("Unable to authenticate to Discogs.")
         sys.exit(1)
 
     except Exception as e:
-        print(f'MusicBrainz authentication error {e}')
+        logging.error(f'MusicBrainz authentication error {e}')
         sys.exit(1)
 
     musicbrainzngs.set_rate_limit(1, 1)
@@ -2222,7 +1927,7 @@ def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, re
         if row is not None:
             update_row(discogs_client, discogs_id=int(discogs_id), version_id=max_version_id)
         else:
-            print(f'discogs_id {discogs_id} not found')
+            logging.error(f'discogs_id {discogs_id} not found')
 
     elif mb_id:
         row = db_fetch_row_by_mb_id(mb_id)
@@ -2230,7 +1935,7 @@ def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, re
             update_row(discogs_client, discogs_id=row.release_id,
                        mb_id=mb_id, max_version_id=max_version_id)
         else:
-            print(f'MBID {mb_id} not found')
+            logging.error(f'MBID {mb_id} not found')
 
     else:
 
@@ -2272,7 +1977,7 @@ def scrape_discogs(discogs_id=0, mb_id=None):
             print(f'update {db_summarise_row(row=row)}')
             scrape_row(discogs_client=discogs_client, row=row, discogs_id=int(discogs_id))
         else:
-            print(f'discogs_id {discogs_id} not found')
+            logging.error(f'discogs_id {discogs_id} not found')
 
     elif mb_id:
         row = db_fetch_row_by_mb_id(mb_id)
@@ -2280,7 +1985,7 @@ def scrape_discogs(discogs_id=0, mb_id=None):
             print(f'update {db_summarise_row(row=row)}')
             scrape_row(discogs_client=discogs_client, row=row)
         else:
-            print(f'MBID {mb_id} not found')
+            logging.error(f'MBID {mb_id} not found')
 
     else:
 
@@ -2755,7 +2460,7 @@ def mb_match_catno(mb_release, catno):
     return False
 
 
-def mb_summarise_release_group(mb_release_group=None, id=None):
+def mb_summarise_release_group(mb_release_group=None, mb_id=None):
     load_mbid = None
 
     if mb_release_group:
@@ -2769,7 +2474,7 @@ def mb_summarise_release_group(mb_release_group=None, id=None):
         if not x:
             load_mbid = mb_release_group.get('id')
     else:
-        load_mbid = id
+        load_mbid = mb_id
 
     if mb_release_group is None and load_mbid == 0:
         raise Exception("Unable to load MusicBrainz release group")
@@ -2811,7 +2516,7 @@ def mb_summarise_release_group(mb_release_group=None, id=None):
     return ' '.join(output)
 
 
-def mb_summarise_release(mb_release=None, id=None):
+def mb_summarise_release(mb_release=None, mb_id=None):
 
     load_mbid = None
 
@@ -2826,7 +2531,7 @@ def mb_summarise_release(mb_release=None, id=None):
         if not x:
             load_mbid = mb_release.get('id')
     else:
-        load_mbid = id
+        load_mbid = mb_id
 
     if mb_release is None and load_mbid == 0:
         raise Exception("Unable to load MusicBrainz release")
@@ -2906,7 +2611,7 @@ def discogs_summarise_release(discogs_release=None, id=None, discogs_client=None
 
     country = discogs_release.country
     if country:
-        country = countries.get(country)
+        country = COUNTRIES.get(country)
         if country:
             output.append(country)
         else:
