@@ -1,4 +1,11 @@
-discogs.db
+**/.vscode/
+
+# Byte-compiled / optimized / DLL files
+**/__pycache__/
+*.py[cod]
+*$py.class
+**/*.pyc
+
+*.db
 anBn.jpeg
-discogs.sqbpro
-discogs backup.db
+*.sqbpro

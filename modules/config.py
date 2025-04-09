@@ -10,7 +10,7 @@ class AppConfig:
         self.reset = args.reset
         self.match = args.match
         self.release_date = args.release_date
-        self.id = args.id
+        self.discogs_id = args.discogs_id
         self.mbid = args.mbid
 
         self.database_name = args.database or "local.db"
