@@ -49,11 +49,19 @@ SCORE_WEIGHTS = {
 MAXIMUM_SCORE = 12
 
 
-with open("config/countries.json", "r", encoding="utf-8") as f:
-    COUNTRIES = json.load(f)
+try:
+    with open("config/countries.json", "r", encoding="utf-8") as f:
+        COUNTRIES = json.load(f)
+except FileNotFoundError:
+    logger.error("countries.json not found. Please check your config path.")
+    COUNTRIES = {}
 
-with open("config/mediatypes.json", "r", encoding="utf-8") as f:
-    MEDIATYPES = json.load(f)
+try:
+    with open("config/mediatypes.json", "r", encoding="utf-8") as f:
+        MEDIATYPES = json.load(f)
+except FileNotFoundError:
+    logger.error("countries.json not found. Please check your config path.")
+    MEDIATYPES = {}
 
 global config
 
