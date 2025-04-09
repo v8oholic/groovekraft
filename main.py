@@ -25,8 +25,10 @@ import dateutil
 from contextlib import contextmanager
 import json
 import logging
+import configparser
+
 from modules.utils import normalize_country_name
-from modules.config import get_app_config
+from modules.config import AppConfig
 
 
 NAMED_TUPLES = True
@@ -63,8 +65,6 @@ except FileNotFoundError:
     logger.error("countries.json not found. Please check your config path.")
     MEDIATYPES = {}
 
-global config
-
 
 def signal_handler(sig, frame):
     logger.info('You pressed Ctrl+C!')
@@ -72,17 +72,15 @@ def signal_handler(sig, frame):
 
 
 @contextmanager
-def db_ops(db_name):
+def db_ops(config):
     """Wrapper to take care of committing and closing a database
 
     See https://stackoverflow.com/questions/67436362/decorator-for-sqlite3/67436763
     """
-    global args
-
-    if args.dry_run:
-        conn = sqlite3.connect(f'file:{db_name}?mode=ro', uri=True)
+    if config.dry_run:
+        conn = sqlite3.connect(f'file:{config.database_name}?mode=ro', uri=True)
     else:
-        conn = sqlite3.connect(db_name)
+        conn = sqlite3.connect(config.database_name)
 
     if NAMED_TUPLES:
         conn.row_factory = namedtuple_factory
@@ -102,7 +100,7 @@ def db_ops(db_name):
         conn.close()
 
 
-def disambiguator_score(discogs_release=None, discogs_id=None, mb_release=None, mb_id=None, discogs_client=None):
+def disambiguator_score(discogs_release=None, discogs_id=None, mb_release=None, mbid=None, discogs_client=None):
     """Score a MusicBrainz release against a Discogs release
 
     Returns a rounded percentage score, with 100 being a perfect match."""
@@ -123,7 +121,7 @@ def disambiguator_score(discogs_release=None, discogs_id=None, mb_release=None, 
         ]):
             load_mbid = mb_release.get('id')
     else:
-        load_mbid = mb_id
+        load_mbid = mbid
 
     if mb_release is None and load_mbid == 0:
         raise Exception("Unable to load MusicBrainz release")
@@ -449,26 +447,21 @@ def namedtuple_factory(cursor, row):
     return cls._make(row)
 
 
-def connect_to_discogs(oauth_token=None, ouath_token_secret=None):
-    global config
-
-    user_agent = config.get('Common', 'user_agent', fallback='v8oholic_collection_application/1.0')
-    consumer_key = config.get('Discogs', 'consumer_key')
-    consumer_secret = config.get('Discogs', 'consumer_secret')
+def connect_to_discogs(config):
 
     authenticated = False
 
-    if oauth_token and ouath_token_secret:
+    if config.oauth_token and config.oauth_token_secret:
         try:
             client = discogs_client.Client(
-                user_agent,
-                consumer_key=consumer_key,
-                consumer_secret=consumer_secret,
-                token=oauth_token,
-                secret=ouath_token_secret
+                config.user_agent,
+                consumer_key=config.consumer_key,
+                consumer_secret=config.consumer_secret,
+                token=config.oauth_token,
+                secret=config.oauth_token_secret
             )
-            access_token = oauth_token
-            access_secret = ouath_token_secret
+            access_token = config.oauth_token
+            access_secret = config.oauth_token_secret
             authenticated = True
 
         except HTTPError:
@@ -480,10 +473,10 @@ def connect_to_discogs(oauth_token=None, ouath_token_secret=None):
     if not authenticated:
 
         # instantiate discogs_client object
-        client = discogs_client.Client(user_agent=user_agent)
+        client = discogs_client.Client(user_agent=config.user_agent)
 
         # prepare the client with our API consumer data
-        client.set_consumer_key(consumer_key, consumer_secret)
+        client.set_consumer_key(config.consumer_key, config.consumer_secret)
         token, secret, url = client.get_authorize_url()
 
         logger.debug(" == Request Token == ")
@@ -549,125 +542,96 @@ if False:
 # print(x)
 
 
-def db_update_artist(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_artist(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
         return
 
     logger.debug(row_change(release_id, 'artist', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET artist = ? WHERE release_id = ?', (new_value, release_id))
 
 
-def db_update_title(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
+def db_update_title(release_id, new_value, old_value, config):
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
         return
 
     logger.debug(row_change(release_id, 'title', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET title = ? WHERE release_id = ?', (new_value, release_id))
 
 
-def db_update_mb_id(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_mb_id(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_ignore_change(release_id, 'mb_id', new_value, old_value, 'read-only'))
         return
 
     logger.debug(row_change(release_id, 'mb_id', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_id = ? WHERE release_id = ?', (new_value, release_id))
 
 
-def db_update_mb_artist(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_mb_artist(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_ignore_change(release_id, 'mb_artist',
                        new_value, old_value, 'read-only'))
         return
 
     logger.debug(row_change(release_id, 'mb_artist', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_artist = ? WHERE release_id = ?', (new_value, release_id))
 
 
-def db_update_mb_title(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_mb_title(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_change(release_id, 'mb_title', new_value, old_value, 'read-only'))
         return
 
     logger.debug(row_change(release_id, 'mb_title', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_title = ? WHERE release_id = ?', (new_value, release_id))
 
 
-def db_update_sort_name(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_sort_name(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_change(release_id, 'sort_name', new_value, old_value, 'read-only'))
         return
 
     logger.debug(row_change(release_id, 'sort_name', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET sort_name = ? WHERE release_id = ?', (new_value, release_id))
 
 
-def db_update_release_date(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_release_date(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_change(release_id, 'release_date', new_value, old_value, 'read-only'))
         return
 
@@ -682,16 +646,12 @@ def db_update_release_date(release_id, new_value, old_value):
         return
 
     logger.debug(row_change(release_id, 'release_date', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET release_date = ? WHERE release_id = ?',
                     (new_value, release_id))
 
 
-def db_update_country(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_country(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
@@ -701,15 +661,11 @@ def db_update_country(release_id, new_value, old_value):
         return
 
     logger.debug(row_change(release_id, 'country', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET country = ? WHERE release_id = ?', (new_value, release_id))
 
 
-def db_update_format(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_format(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
@@ -719,71 +675,56 @@ def db_update_format(release_id, new_value, old_value):
         return
 
     logger.debug(row_change(release_id, 'format', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET format = ? WHERE release_id = ?', (new_value, release_id))
 
 
-def db_update_mb_primary_type(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_mb_primary_type(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_change(release_id, 'mb_primary_type', new_value, old_value, 'read-only'))
         return
 
     logger.debug(row_change(release_id, 'mb_primary_type', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_primary_type = ? WHERE release_id = ?',
                     (new_value, release_id))
 
 
-def db_update_version_id(release_id, new_value, old_value):
-    global args
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def db_update_version_id(release_id, new_value, old_value, config):
 
     if old_value == new_value:
         return
 
-    if args.dry_run:
+    if config.dry_run:
         logger.warning(row_change(release_id, 'version_id', new_value, old_value, 'read-only'))
         return
 
     logger.debug(row_change(release_id, 'version_id', new_value, old_value))
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET version_id = ? WHERE release_id = ?',
                     (new_value, release_id))
 
 
-def db_fetch_row_by_discogs_id(discogs_id):
-    global config
+def db_fetch_row_by_discogs_id(discogs_id, config):
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('SELECT * FROM items WHERE release_id = ?', (int(discogs_id),))
         row = cur.fetchone()
 
     return row
 
 
-def db_insert_row(artist=None, title=None, format=None, mb_primary_type=None, release_date=None, release_id=0, country=None, mb_id=None, mb_artist=None, mb_title=None, sort_name=None, version_id=0):
-    global args
-    global config
+def db_insert_row(artist=None, title=None, format=None, mb_primary_type=None, release_date=None, release_id=0, country=None, mb_id=None, mb_artist=None, mb_title=None, sort_name=None, version_id=0, config=None):
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    if args.dry_run:
+    if config.dry_run:
         logger.warning('dry run - not inserted')
         return
 
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute("""
             INSERT INTO items (artist, title, format, mb_primary_type, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name, version_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -791,12 +732,9 @@ def db_insert_row(artist=None, title=None, format=None, mb_primary_type=None, re
                     (artist, title, format, mb_primary_type, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name, version_id))
 
 
-def db_get_release_date_by_discogs_id(discogs_id):
-    global config
+def db_get_release_date_by_discogs_id(discogs_id, config):
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('SELECT * FROM items WHERE release_id = ?', (int(discogs_id),))
         row = cur.fetchone()
 
@@ -806,19 +744,16 @@ def db_get_release_date_by_discogs_id(discogs_id):
     return row.release_date
 
 
-def db_fetch_row_by_mb_id(mb_id):
-    global config
+def db_fetch_row_by_mb_id(mb_id, config):
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('SELECT * FROM items WHERE mb_id = ?', (mb_id,))
         row = cur.fetchone()
 
     return row
 
 
-def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
+def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0, config=None):
 
     if row is None and discogs_id:
         db_fetch_row_by_discogs_id(discogs_id=discogs_id)
@@ -877,7 +812,7 @@ def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
 
             # only use the date if it's earlier than the existing one
             release_date = earliest_date(row.release_date, release_date_str)
-            db_update_release_date(row.release_id, release_date)
+            db_update_release_date(row.release_id, release_date, config)
 
 
 def convert_format(discogs_format):
@@ -1448,21 +1383,15 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     db_update_mb_primary_type(discogs_release.id, mb_primary_type, row.mb_primary_type)
 
 
-def import_from_discogs(discogs_id=None, all_rows=False, new_rows=False):
-    global config
-
-    user_agent = config.get('Common', 'user_agent', fallback='v8oholic_collection_application/1.0')
-    username = config.get('MusicBrainz', 'username')
-    password = config.get('MusicBrainz', 'password')
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def import_from_discogs(discogs_id=None, all_rows=False, new_rows=False, config=None):
 
     if discogs_id == None and all_rows == False and new_rows == False:
         new_rows = True
 
-    musicbrainz.set_useragent(user_agent, '0.1', 'steve.powell@outlook.com')
+    musicbrainz.set_useragent(config.user_agent, '0.1', 'steve.powell@outlook.com')
 
     try:
-        musicbrainz.auth(username, password)
+        musicbrainz.auth(config.username, config.password)
 
     except HTTPError:
         logging.error("Unable to authenticate to Discogs.")
@@ -1475,11 +1404,7 @@ def import_from_discogs(discogs_id=None, all_rows=False, new_rows=False):
     musicbrainzngs.set_rate_limit(1, 1)
     # musicbrainzngs.set_format(fmt='json')
 
-    oauth_token = 'bTNnyxNgaHvEarRXVjBiRAoJZgTBPuUXosDEdiEG'
-    ouath_token_secret = 'YJfCvMXmaxJgfroTnSjtSDKWZpsLbEYPEwUwuSyK'
-
-    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(
-        oauth_token, ouath_token_secret)
+    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
 
     # fetch the identity object for the current logged in user.
     discogs_user = discogs_client.identity()
@@ -1496,7 +1421,7 @@ def import_from_discogs(discogs_id=None, all_rows=False, new_rows=False):
     max_version_id = 0
     min_version_id = 0
 
-    with db_ops(database_name) as cur:
+    with db_ops(config.database_name) as cur:
 
         # get the highest version number
         cur.execute("""
@@ -1542,13 +1467,10 @@ def import_from_discogs(discogs_id=None, all_rows=False, new_rows=False):
                        discogs_release=discogs_item.release, version_id=max_version_id)
 
 
-def open_db():
+def open_db(config):
     """Create database"""
-    global config
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         res = cur.execute("SELECT name FROM sqlite_master WHERE name='items'")
         if res.fetchone() is None:
             logging.debug("creating table")
@@ -1574,14 +1496,11 @@ def fls(data_str, length):
         return data_str.ljust(length)
 
 
-def match(text, release_date=None):
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def match(text, release_date=None, config=None):
 
     set_date = None
 
-    with db_ops(database_name) as cur:
+    with db_ops(config.database_name) as cur:
 
         cur.execute(f"""
             SELECT *
@@ -1735,32 +1654,24 @@ def match(text, release_date=None):
                         f'{row.release_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
 
 
-def status():
-    global config
-
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-    mb_username = config.get('MusicBrainz', 'username')
+def status(config):
 
     def output_nvp(label, value):
         print(f'{fls(label, 45)}: {value}')
 
-    oauth_token = 'bTNnyxNgaHvEarRXVjBiRAoJZgTBPuUXosDEdiEG'
-    ouath_token_secret = 'YJfCvMXmaxJgfroTnSjtSDKWZpsLbEYPEwUwuSyK'
-
-    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(
-        oauth_token, ouath_token_secret)
+    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
 
     # fetch the identity object for the current logged in user.
     discogs_user = discogs_client.identity()
 
     output_nvp("Discogs username", discogs_user.username)
-    output_nvp("MusicBrainz username", mb_username)
+    output_nvp("MusicBrainz username", config.username)
 
     folder = discogs_user.collection_folders[0]
 
     output_nvp('releases on Discogs', len(folder.releases))
 
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
 
         cur.execute("""
             SELECT COUNT(*) as count
@@ -1847,12 +1758,9 @@ def status():
         output_nvp('releases with full release date', row.count)
 
 
-def random_selection():
-    global config
+def random_selection(config):
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
 
         cur.execute("""
             SELECT *
@@ -1884,17 +1792,13 @@ def output_row(row):
         print(f'release_date    : {parse_and_humanize_date(row.release_date)}')
 
 
-def update_mb_id(release_id, mb_id):
-    global args
-    global config
+def update_mb_id(release_id, mb_id, config=None):
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    if args.dry_run:
+    if config.dry_run:
         logging.warning('dry run - not updated')
         return
 
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
         cur.execute('UPDATE items SET mb_id = ? WHERE release_id = ?', (mb_id, release_id))
 
 
@@ -1950,21 +1854,15 @@ def parse_and_humanize_date(ymd_date):
     return ''
 
 
-def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, reset_versions=False):
-    global config
-
-    mb_username = config.get('MusicBrainz', 'username')
-    mb_password = config.get('MusicBrainz', 'password')
-    user_agent = config.get('Common', 'user_agent', fallback='v8oholic_collection_application/1.0')
-    database_name = config.get('Common', 'database_name', fallback='local.db')
+def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, reset_versions=False, config=None):
 
     if discogs_id == None and mb_id == None and all_rows == False and new_rows == False:
         new_rows = True
 
-    musicbrainz.set_useragent(user_agent, '0.1', 'steve.powell@outlook.com')
+    musicbrainz.set_useragent(config.user_agent, '0.1', 'steve.powell@outlook.com')
 
     try:
-        musicbrainz.auth(mb_username, mb_password)
+        musicbrainz.auth(config.username, config.password)
 
     except HTTPError:
         logging.error("Unable to authenticate to Discogs.")
@@ -1976,11 +1874,7 @@ def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, re
 
     musicbrainzngs.set_rate_limit(1, 1)
 
-    oauth_token = 'bTNnyxNgaHvEarRXVjBiRAoJZgTBPuUXosDEdiEG'
-    ouath_token_secret = 'YJfCvMXmaxJgfroTnSjtSDKWZpsLbEYPEwUwuSyK'
-
-    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(
-        oauth_token, ouath_token_secret)
+    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
 
     # get the highest version number, which will be used for all updates
     max_version_id = 0
@@ -1988,13 +1882,13 @@ def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, re
 
     if reset_versions:
         # reset the row versions, so that all will be processed
-        with db_ops(database_name) as cur:
+        with db_ops(config) as cur:
             cur.execute("""
                     UPDATE items
                     SET version_id = 0
                 """)
     else:
-        with db_ops(database_name) as cur:
+        with db_ops(config) as cur:
 
             # get the highest version number
             cur.execute("""
@@ -2022,7 +1916,7 @@ def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, re
 
     else:
 
-        with db_ops(database_name) as cur:
+        with db_ops(config) as cur:
 
             if all_rows == False and max_version_id > 0 and max_version_id > min_version_id:
                 # only process items below the maximum version
@@ -2046,16 +1940,9 @@ def update_table(discogs_id=None, mb_id=None, all_rows=False, new_rows=False, re
                                version_id=max_version_id+1)
 
 
-def scrape_discogs(discogs_id=0, mb_id=None):
-    global config
+def scrape_discogs(discogs_id=0, mb_id=None, config=None):
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    oauth_token = 'bTNnyxNgaHvEarRXVjBiRAoJZgTBPuUXosDEdiEG'
-    ouath_token_secret = 'YJfCvMXmaxJgfroTnSjtSDKWZpsLbEYPEwUwuSyK'
-
-    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(
-        oauth_token, ouath_token_secret)
+    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
 
     if discogs_id:
         row = db_fetch_row_by_discogs_id(discogs_id)
@@ -2075,7 +1962,7 @@ def scrape_discogs(discogs_id=0, mb_id=None):
 
     else:
 
-        with db_ops(database_name) as cur:
+        with db_ops(config) as cur:
 
             cur.execute("""
                 SELECT *
@@ -2997,12 +2884,9 @@ def mb_find_releases(artist='', title='', catno=None, primary_type=None, country
         return all_results
 
 
-def on_this_day(today_str=''):
-    global config
+def on_this_day(today_str='', config=None):
 
-    database_name = config.get('Common', 'database_name', fallback='local.db')
-
-    with db_ops(database_name) as cur:
+    with db_ops(config) as cur:
 
         cur.execute("""
             SELECT *
@@ -3031,61 +2915,37 @@ def on_this_day(today_str=''):
                 print()
 
 
-def main():
-    global config
-    global args
+def main(config):
 
-    discogs_id = None
-    mb_id = None
-
-    config = get_app_config()
-
-    print(config.get('Common', 'database_name'))
-    print(config.get('Common', 'user_agent'))
-
-    print(config.get('Discogs', 'consumer_key'))
-    print(config.get('Discogs', 'consumer_secret'))
-
-    print(config.get('MusicBrainz', 'username'))
-    print(config.get('MusicBrainz', 'password'))
-
-    if args.id:
-        discogs_id = args.id
-    elif args.mbid:
-        mb_id = args.mbid
-
-    open_db()
+    open_db(config)
 
     # discogs_id = 5084926
     # update_table(discogs_id=2635834)
     # return
 
     if args.import_items:
-        import_from_discogs(discogs_id=discogs_id, all_rows=args.all_items, new_rows=args.new_items)
+        import_from_discogs(config=config)
 
     elif args.update_items:
-        update_table(discogs_id=discogs_id, mb_id=mb_id,
-                     all_rows=args.all_items, new_rows=args.new_items, reset_versions=args.reset)
+        update_table(config=config)
 
     elif args.scrape:
-        scrape_discogs(discogs_id=discogs_id, mb_id=mb_id,
-                       all_rows=args.all_items, new_rows=args.new_items)
+        scrape_discogs(config=config)
 
     elif args.match:
-        match(args.match, args.release_date)
+        match(config=config)
 
     elif args.random:
-        random_selection()
+        random_selection(config=config)
 
     elif args.onthisday:
-        on_this_day()
+        on_this_day(config=config)
 
     elif args.status:
-        status()
+        status(config=config)
 
 
 if __name__ == "__main__":
-    global args
 
     signal.signal(signal.SIGINT, signal_handler)
 
@@ -3118,12 +2978,19 @@ if __name__ == "__main__":
     id_group.add_argument('--reset', required=False, action='store_true', help='reset version number to force full update')
 
     parser.add_argument('--dry-run', '--read-only', required=False, action="store_true", help='dry run to test filtering')
+    parser.add_argument("--database", type=str, help="Path to the SQLite database file")
     parser.add_argument('--verbose', required=False, action='store_true', help='verbose messages')
     # autopep8: on
 
     args = parser.parse_args()
 
+    config_parser = configparser.ConfigParser()
+    config_parser.read("discogs.ini")
+
+    config = AppConfig(args)
+    config.load_from_config_parser(config_parser)
+
     # args2 = vars(args)
     # print(args2)
 
-    main()
+    main(config)
