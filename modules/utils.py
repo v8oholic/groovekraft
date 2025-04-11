@@ -2,6 +2,12 @@
 
 # Shared helper functions
 
+import re
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def normalize_country_name(name):
     """
     Normalize and canonicalize country names to improve matching with COUNTRIES mapping.
@@ -10,19 +16,25 @@ def normalize_country_name(name):
     if not name:
         return None
 
-    name = name.strip().lower()
+    # name = name.strip().lower()
+    name = name.strip()
 
     # Move trailing ', the' to the front: 'Bahamas, The' -> 'The Bahamas'
     if name.endswith(', the'):
         name = 'the ' + name[:-5].strip()
+    elif name.endswith(', The'):
+        name = 'The ' + name[:-5].strip()
 
     # Remove leading 'the' if present (optional, depending on how COUNTRIES is structured)
     if name.startswith("the "):
         name = name[4:]
+    elif name.startswith("The "):
+        name = name[4:]
 
     # Normalize punctuation and spacing
     name = name.replace("&", "and").replace(",", "").replace("  ", " ")
-    return " ".join(word.capitalize() for word in name.split())
+    return name
+    # return " ".join(word.capitalize() for word in name.split())
 
 
 def convert_format(discogs_format):
@@ -123,3 +135,13 @@ def convert_format(discogs_format):
         mb_primary_type = "?"
 
     return format, mb_primary_type, mb_format
+
+
+def sanitise_identifier(catno):
+    catno_string = ''.join(chr for chr in catno if chr.isalnum()).casefold()
+    return catno_string
+
+
+def trim_if_ends_with_number_in_brackets(s):
+    pattern = r' \(([1-9]\d*)\)$'
+    return re.sub(pattern, '', s)

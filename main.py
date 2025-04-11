@@ -9,7 +9,6 @@ from musicbrainzngs import musicbrainz
 import sys
 import argparse
 import signal
-import re
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -25,15 +24,19 @@ import logging
 import configparser
 
 import modules.db as db
+from modules.discogs_importer import import_from_discogs_v2
+from modules.discogs_importer import connect_to_discogs
+from modules.discogs_importer import discogs_summarise_release
 from modules.utils import normalize_country_name
 from modules.config import AppConfig
 from modules.utils import convert_format
+from modules.utils import sanitise_identifier
+from modules.utils import trim_if_ends_with_number_in_brackets
 
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# Discogs -> MusicBrainz mapping
+V2 = True
 
 SCORE_WEIGHTS = {
     "artist": 2,
@@ -281,10 +284,6 @@ def get_earliest_release_date2(artist, title):
     except musicbrainzngs.WebServiceError as e:
         return f"Error: {e}"
 
-
-def trim_if_ends_with_number_in_brackets(s):
-    pattern = r' \(([1-9]\d*)\)$'
-    return re.sub(pattern, '', s)
     # return bool(re.search(pattern, s))
 
 
@@ -408,68 +407,6 @@ def init_driver():
     driver = webdriver.Chrome(service=service, options=chrome_options)
 
     return driver
-
-
-def connect_to_discogs(config):
-
-    authenticated = False
-
-    if config.oauth_token and config.oauth_token_secret:
-        try:
-            client = discogs_client.Client(
-                config.user_agent,
-                consumer_key=config.consumer_key,
-                consumer_secret=config.consumer_secret,
-                token=config.oauth_token,
-                secret=config.oauth_token_secret
-            )
-            access_token = config.oauth_token
-            access_secret = config.oauth_token_secret
-            authenticated = True
-
-        except HTTPError:
-            logger.error("Unable to authenticate.")
-            access_token = None
-            access_secret = None
-            authenticated = False
-
-    if not authenticated:
-
-        # instantiate discogs_client object
-        client = discogs_client.Client(user_agent=config.user_agent)
-
-        # prepare the client with our API consumer data
-        client.set_consumer_key(config.consumer_key, config.consumer_secret)
-        token, secret, url = client.get_authorize_url()
-
-        logger.debug(" == Request Token == ")
-        logger.debug(f"    * oauth_token        = {token}")
-        logger.debug(f"    * oauth_token_secret = {secret}")
-
-        # visit the URL in auth_url to allow the app to connect
-
-        print(f"Please browse to the following URL {url}")
-
-        accepted = "n"
-        while accepted.lower() == "n":
-            print()
-            accepted = input(f"Have you authorized me at {url} [y/n] :")
-
-        # note the token
-
-        # Waiting for user input. Here they must enter the verifier key that was
-        # provided at the unqiue URL generated above.
-        oauth_verifier = input("Verification code : ")
-
-        try:
-            access_token, access_secret = client.get_access_token(oauth_verifier)
-            authenticated = True
-
-        except HTTPError:
-            print("Unable to authenticate to Discogs.")
-            sys.exit(1)
-
-    return client, access_token, access_secret
 
 
 if False:
@@ -808,7 +745,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     if not discogs_release and discogs_id:
         discogs_release = discogs_client.release(discogs_id)
 
-    print(f'⚙️ {discogs_summarise_release(discogs_release=discogs_release)}')
+    print(f'⚙️ {discogs_summarise_release(release=discogs_release)}')
 
     country = discogs_release.country
     mb_country = COUNTRIES.get(normalize_country_name(country))
@@ -936,7 +873,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         if not release_date:
             release_date = mb_release.get('date')
     else:
-        print(f'❌ no match for {discogs_summarise_release(discogs_release=discogs_release)}')
+        print(f'❌ no match for {discogs_summarise_release(release=discogs_release)}')
         version_id = 0
 
     row = db.fetch_row_by_discogs_id(discogs_release.id, config)
@@ -951,13 +888,14 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         db.update_mb_primary_type(discogs_release.id, mb_primary_type,
                                   row.mb_primary_type, config=config)
         db.update_country(discogs_release.id, mb_country, row.country, config=config)
-        db.update_release_date(discogs_release.id, release_date, row.release_date, config=config)
+        db.update_release_date(discogs_release.id, release_date,
+                               row.release_date, config=config)
         db.update_version_id(discogs_release.id, version_id, row.version_id, config=config)
 
     else:
 
         # no row exists yet - create a minimal row
-        print(f'💾 {discogs_summarise_release(discogs_release=discogs_release)}')
+        print(f'💾 {discogs_summarise_release(release=discogs_release)}')
 
         db.insert_row(release_id=discogs_release.id,
                       artist=artist_name,
@@ -1069,7 +1007,7 @@ def import_from_discogs(config=None):
     max_version_id = 0
     min_version_id = 0
 
-    with db.db_ops(config) as cur:
+    with db.db_ops() as cur:
 
         # get the highest version number
         cur.execute("""
@@ -1115,28 +1053,6 @@ def import_from_discogs(config=None):
                        discogs_release=discogs_item.release, version_id=max_version_id)
 
 
-def open_db(config):
-    """Create database"""
-
-    with db.db_ops(config) as cur:
-        res = cur.execute("SELECT name FROM sqlite_master WHERE name='items'")
-        if res.fetchone() is None:
-            logging.debug("creating table")
-            cur.execute(
-                "CREATE TABLE items(artist, title, format, release_id, release_date, country, mb_id, mb_artist, mb_title, sort_name, version_id)")
-            cur.execute("CREATE UNIQUE INDEX idx_items_release_id ON items(release_id)")
-            cur.execute(
-                "CREATE UNIQUE INDEX idx_items_sort ON items(sort_name, artist, release_date, title, release_id)")
-            cur.execute("CREATE UNIQUE INDEX idx_items_version ON items(version_id, release_id)")
-    # else:
-    #   cur.execute("ALTER TABLE status ADD locked NOT NULL DEFAULT 0")
-        # word count, word list, words
-        # cur.execute("ALTER TABLE status ADD word_count DEFAULT 0")
-        # cur.execute("ALTER TABLE status DROP words_found")
-        # cur.execute("ALTER TABLE status ADD transcription")
-        # cur.execute("CREATE UNIQUE INDEX idx_status_primary ON status(girl, number)")
-
-
 def fls(data_str, length):
     if len(data_str) > length:
         return data_str[:length-3]+'...'
@@ -1148,7 +1064,7 @@ def match(config=None):
 
     set_date = None
 
-    with db.db_ops(config) as cur:
+    with db.db_ops() as cur:
 
         cur.execute(f"""
             SELECT *
@@ -1319,7 +1235,7 @@ def status(config):
 
     output_nvp('releases on Discogs', len(folder.releases))
 
-    with db.db_ops(config) as cur:
+    with db.db_ops() as cur:
 
         cur.execute("""
             SELECT COUNT(*) as count
@@ -1408,7 +1324,7 @@ def status(config):
 
 def random_selection(config):
 
-    with db.db_ops(config) as cur:
+    with db.db_ops() as cur:
 
         cur.execute("""
             SELECT *
@@ -1520,13 +1436,13 @@ def update_table(config=None):
 
     if config.reset:
         # reset the row versions, so that all will be processed
-        with db.db_ops(config) as cur:
+        with db.db_ops() as cur:
             cur.execute("""
                     UPDATE items
                     SET version_id = 0
                 """)
     else:
-        with db.db_ops(config) as cur:
+        with db.db_ops() as cur:
 
             # get the highest version number
             cur.execute("""
@@ -1555,7 +1471,7 @@ def update_table(config=None):
 
     else:
 
-        with db.db_ops(config) as cur:
+        with db.db_ops() as cur:
 
             if config.all_items == False and max_version_id > 0 and max_version_id > min_version_id:
                 # only process items below the maximum version
@@ -1602,7 +1518,7 @@ def scrape_discogs(discogs_id=0, mb_id=None, config=None):
 
     else:
 
-        with db.db_ops(config) as cur:
+        with db.db_ops() as cur:
 
             cur.execute("""
                 SELECT *
@@ -2038,11 +1954,6 @@ def mb_match_discogs_release(mb_release_id, discogs_url):
     return False
 
 
-def sanitise_identifier(catno):
-    catno_string = ''.join(chr for chr in catno if chr.isalnum()).casefold()
-    return catno_string
-
-
 def mb_match_catno(mb_release, catno):
     # match catalog number(s) against a release (because search by catno is broken)
 
@@ -2197,44 +2108,6 @@ def mb_summarise_release(mb_release=None, mb_id=None):
         format = first_media.get('format')
         if format:
             output.append(format)
-
-    return ' '.join(output)
-
-
-def discogs_summarise_release(discogs_release=None, id=None, discogs_client=None):
-    if not discogs_release and id and discogs_client:
-        discogs_release = discogs_client.release(id)
-
-    output = []
-
-    id = discogs_release.id
-    output.append(f'Discogs {id}')
-
-    artist = trim_if_ends_with_number_in_brackets(discogs_release.artists[0].name)
-    if artist:
-        output.append(artist)
-
-    title = discogs_release.title
-    if title:
-        output.append(title)
-
-    year = discogs_release.year
-    if year:
-        output.append(str(year))
-
-    country = discogs_release.country
-    if country:
-        country = COUNTRIES.get(country)
-        if country:
-            output.append(country)
-        else:
-            print(f'{discogs_release.country} not found!')
-
-    first_format = discogs_release.formats[0]
-    format = first_format.get('name') + ' ' + ' '.join(first_format.get('descriptions'))
-
-    if format:
-        output.append(format)
 
     return ' '.join(output)
 
@@ -2526,7 +2399,7 @@ def mb_find_releases(artist='', title='', catno=None, primary_type=None, country
 
 def on_this_day(today_str='', config=None):
 
-    with db.db_ops(config) as cur:
+    with db.db_ops() as cur:
 
         cur.execute("""
             SELECT *
@@ -2557,14 +2430,17 @@ def on_this_day(today_str='', config=None):
 
 def main(config):
 
-    open_db(config)
+    db.initialize_db()
 
     # discogs_id = 5084926
     # update_table(discogs_id=2635834)
     # return
 
     if args.import_items:
-        import_from_discogs(config=config)
+        if V2:
+            import_from_discogs_v2(config=config)
+        else:
+            import_from_discogs(config=config)
 
     elif args.update_items:
         update_table(config=config)
