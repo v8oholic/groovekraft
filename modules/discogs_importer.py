@@ -4,10 +4,10 @@
 import discogs_client
 from discogs_client.exceptions import HTTPError
 
-from .db import update_artist, update_barcodes, update_format, update_catnos, update_country, update_title
-from .db import fetch_row_by_discogs_id_v2, insert_row_v2
+from .db import update_artist, update_barcodes, update_format, update_catnos, update_country, update_title, update_master_id
+from .db import fetch_discogs_release, insert_row, update_release_date, update_year
 
-from .utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name
+from .utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name, earliest_date
 
 import logging
 
@@ -170,29 +170,34 @@ def import_from_discogs_v2(config=None):
         country = normalize_country(release.country)
         barcodes = normalize_barcodes(release.fetch('identifiers'))
         catnos = normalize_catnos(release.labels)
+        year = release.year if release.year else None
+        master_id = release.master.id if release.master is not None else 0
 
-        row = fetch_row_by_discogs_id_v2(release.id)
+        row = fetch_discogs_release(release.id)
 
         if row:
-            update_artist(release.id, artist, row.artist, config.dry_run)
-            update_title(release.id, title, row.title, config.dry_run)
-            update_format(release.id, format, row.format, config.dry_run)
-            update_country(release.id, country, row.country, config.dry_run)
-            update_barcodes(release.id, barcodes if barcodes else None,
-                            row.barcodes, config.dry_run)
-            update_catnos(release.id, catnos if catnos else None, row.catnos, config.dry_run)
+            release_date = earliest_date(row.release_date, year)
+
+            update_artist(release.id, artist, row.artist)
+            update_title(release.id, title, row.title)
+            update_format(release.id, format, row.format)
+            update_country(release.id, country, row.country)
+            update_barcodes(release.id, barcodes if barcodes else None, row.barcodes)
+            update_catnos(release.id, catnos if catnos else None, row.catnos)
+            update_year(release.id, year, row.year)
+            update_release_date(release.id, release_date, row.release_date)
+            update_catnos(release.id, catnos if catnos else None, row.catnos)
 
         else:
 
-            print(f'💾 {discogs_summarise_release(release=release)}')
-
-            insert_row_v2(
+            insert_row(
                 discogs_id=release.id,
                 artist=artist,
                 title=title,
                 format=format,
                 country=country,
                 release_date=release.year,
+                year=year,
                 barcodes=barcodes if barcodes else None,
                 catnos=catnos if catnos else None,
-                read_only=config.dry_run)
+                master_id=master_id)

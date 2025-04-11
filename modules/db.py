@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import sqlite3
 from collections import namedtuple
 import logging
+from .utils import earliest_date
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +34,8 @@ def initialize_db(db_path=DB_PATH):
             catnos TEXT,
             country TEXT,
             format TEXT,
+            master_id INTEGER,
             release_date TEXT,
-            imported_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
     """)
@@ -60,15 +61,39 @@ def initialize_db(db_path=DB_PATH):
             artist TEXT,
             title TEXT,
             sort_name TEXT,
-            country,
-            score REAL,
+            country TEXT,
+            format TEXT,
+            primary_type TEXT,
+            score INTEGER,
+            release_date TEXT,
             matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (discogs_id) REFERENCES discogs_releases (discogs_id)
         );
     """)
 
+    # cursor.execute("""
+    #     CREATE TABLE IF NOT EXISTS release_dates (
+    #         id INTEGER PRIMARY KEY AUTOINCREMENT,
+    #         discogs_id INTEGER,
+    #         release_date TEXT,
+    #         sort_name TEXT,
+    #         score REAL,
+    #         matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    #         FOREIGN KEY (discogs_id) REFERENCES discogs_releases (discogs_id)
+    #     );
+    # """)
+
     conn.commit()
     conn.close()
+
+
+def fetch_discogs_release_rows():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM discogs_releases")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
 
 
 @contextmanager
@@ -110,341 +135,342 @@ def row_ignore_change(release_id, data_name, data_to, data_from, reason):
     return f'⛔️ {reason} {data_name} not set to {data_to} (still {data_from}) for release {release_id}'
 
 
-def update_artist(release_id, new_value, old_value, config):
+def update_artist(release_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
-        return
-
     print(row_change(release_id, 'artist', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET artist = ? WHERE release_id = ?', (new_value, release_id))
-
-
-def update_artist(release_id, new_value, old_value, read_only=False):
-
-    if old_value == new_value:
-        return
-
-    if read_only:
-        print(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'artist', new_value, old_value))
-    with db_ops(read_only=read_only) as cur:
+    with db_ops() as cur:
         cur.execute("""
             UPDATE discogs_releases
             SET artist = ?
             WHERE discogs_id = ?""", (new_value, release_id))
 
 
-def update_title(release_id, new_value, old_value, config):
+def update_title(release_id, new_value, old_value):
     if old_value == new_value:
         return
 
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
-        return
-
     print(row_change(release_id, 'title', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET title = ? WHERE release_id = ?', (new_value, release_id))
-
-
-def update_title(release_id, new_value, old_value, read_only=False):
-    if old_value == new_value:
-        return
-
-    if read_only:
-        print(row_ignore_change(release_id, 'artist', new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'title', new_value, old_value))
-    with db_ops(read_only=read_only) as cur:
+    with db_ops() as cur:
         cur.execute("""
             UPDATE discogs_releases
             SET title = ?
             WHERE discogs_id = ?""", (new_value, release_id))
 
 
-def update_mb_id(release_id, new_value, old_value, config):
+def update_master_id(release_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'mb_id', new_value, old_value, 'read-only'))
+    print(row_change(release_id, 'master_id', new_value, old_value))
+    with db_ops() as cur:
+        cur.execute("""
+            UPDATE discogs_releases
+            SET master_id = ?
+            WHERE discogs_id = ?""", (int(new_value), release_id))
+
+
+def update_year(release_id, new_value, old_value):
+    if old_value == new_value:
         return
 
-    print(row_change(release_id, 'mb_id', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET mb_id = ? WHERE release_id = ?', (new_value, release_id))
+    print(row_change(release_id, 'year', new_value, old_value))
+    with db_ops() as cur:
+        cur.execute("""
+            UPDATE discogs_releases
+            SET year = ?
+            WHERE discogs_id = ?""", (new_value, release_id))
 
 
-def update_mb_artist(release_id, new_value, old_value, config):
+def update_mbid(discogs_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'mb_artist',
-                                new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'mb_artist', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET mb_artist = ? WHERE release_id = ?', (new_value, release_id))
+    print(row_change(discogs_id, 'mbid', new_value, old_value))
+    with db_ops() as cur:
+        cur.execute("""
+            UPDATE mb_matches
+            SET mbid = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_mb_title(release_id, new_value, old_value, config):
+def update_mb_artist(discogs_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if config.dry_run:
-        print(row_change(release_id, 'mb_title', new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'mb_title', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET mb_title = ? WHERE release_id = ?', (new_value, release_id))
-
-
-def update_sort_name(release_id, new_value, old_value, config):
-
-    if old_value == new_value:
-        return
-
-    if config.dry_run:
-        print(row_change(release_id, 'sort_name', new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'sort_name', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET sort_name = ? WHERE release_id = ?', (new_value, release_id))
+    print(row_change(discogs_id, 'mb_artist', new_value, old_value))
+    with db_ops() as cur:
+        cur.execute("""
+            UPDATE mb_matches
+            SET mb_artist = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_release_date(release_id, new_value, old_value, config):
+def update_mb_title(discogs_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'release_date',
-                                new_value, old_value, 'read-only'))
-        return
-
-    if old_value is not None and len(new_value) < len(old_value):
-        print(row_ignore_change(release_id, 'release_date',
-                                new_value, old_value, "ignored shorter"))
-        return
-
-    if old_value is not None and old_value < new_value:
-        print(row_ignore_change(release_id, 'release_date',
-                                new_value, old_value, "ignored newer"))
-        return
-
-    print(row_change(release_id, 'release_date', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET release_date = ? WHERE release_id = ?',
-                    (new_value, release_id))
+    print(row_change(discogs_id, 'mb_title', new_value, old_value))
+    with db_ops() as cur:
+        cur.execute("""
+            UPDATE mb_matches
+            SET mb_title = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_country(release_id, new_value, old_value, config):
+def update_sort_name(discogs_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'country', new_value, old_value, 'read-only'))
-        return
+    print(row_change(discogs_id, 'sort_name', new_value, old_value))
+    with db_ops() as cur:
+        cur.execute("""
+            UPDATE mb_matches
+            SET sort_name = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
-    print(row_change(release_id, 'country', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET country = ? WHERE release_id = ?', (new_value, release_id))
 
-
-def update_country(release_id, new_value, old_value, read_only):
+def update_mb_country(discogs_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if read_only:
-        print(row_ignore_change(release_id, 'country', new_value, old_value, 'read-only'))
+    print(row_change(discogs_id, 'country', new_value, old_value))
+    with db_ops() as cur:
+        cur.execute("""
+            UPDATE mb_matches
+            SET country = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
+
+
+def update_release_date(discogs_id, new_value):
+
+    with db_ops() as cur:
+        cur.execute("""
+            SELECT release_date
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.release_date
+
+        if old_value == new_value:
+            return
+
+        old_value = str(old_value)
+        new_value = str(new_value)
+
+        if earliest_date(old_value, new_value) == old_value:
+            return
+
+        # if old_value is not None and len(new_value) < len(old_value):
+        #     print(row_ignore_change(discogs_id, 'release_date',
+        #                             new_value, old_value, "ignored shorter"))
+        #     return
+
+        # if old_value is not None and old_value < new_value:
+        #     print(row_ignore_change(discogs_id, 'release_date',
+        #                             new_value, old_value, "ignored newer"))
+        #     return
+
+        print(row_change(discogs_id, 'release_date', new_value, old_value))
+
+        cur.execute("""
+            UPDATE discogs_releases
+            SET release_date = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
+
+
+def update_country(discogs_id, new_value, old_value):
+
+    if old_value == new_value:
         return
 
-    print(row_change(release_id, 'country', new_value, old_value))
-    with db_ops(read_only=read_only) as cur:
+    print(row_change(discogs_id, 'country', new_value, old_value))
+    with db_ops() as cur:
         cur.execute("""
             UPDATE discogs_releases
             SET country = ?
-            WHERE discogs_id = ?""", (new_value, release_id))
+            WHERE discogs_id = ?""", (new_value, discogs_id))
 
 
-def update_barcodes(release_id, new_value, old_value, read_only):
+def update_barcodes(discogs_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if read_only:
-        print(row_ignore_change(release_id, 'barcodes', new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'barcodes', new_value, old_value))
-    with db_ops(read_only=read_only) as cur:
+    print(row_change(discogs_id, 'barcodes', new_value, old_value))
+    with db_ops() as cur:
         cur.execute("""
             UPDATE discogs_releases
             SET barcodes = ?
-            WHERE discogs_id = ?""", (new_value, release_id))
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_catnos(release_id, new_value, old_value, read_only):
+def update_catnos(discogs_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if read_only:
-        print(row_ignore_change(release_id, 'catnos', new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'catnos', new_value, old_value))
-    with db_ops(read_only=read_only) as cur:
+    print(row_change(discogs_id, 'catnos', new_value, old_value))
+    with db_ops() as cur:
         cur.execute("""
             UPDATE discogs_releases
             SET catnos = ?
-            WHERE discogs_id = ?""", (new_value, release_id))
+            WHERE discogs_id = ?""", (new_value, discogs_id))
 
 
-def update_format(release_id, new_value, old_value, config):
-
-    if old_value == new_value:
-        return
-
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'format', new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'format', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET format = ? WHERE release_id = ?', (new_value, release_id))
-
-
-def update_format(release_id, new_value, old_value, read_only=False):
+def update_format(discogs_id, new_value, old_value):
 
     if old_value == new_value:
         return
 
-    if read_only:
-        print(row_ignore_change(release_id, 'format', new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'format', new_value, old_value))
-    with db_ops(read_only=read_only) as cur:
-        cur.execute('UPDATE discogs_releases SET format = ? WHERE discogs_id = ?',
-                    (new_value, release_id))
+    print(row_change(discogs_id, 'format', new_value, old_value))
+    with db_ops() as cur:
+        cur.execute("""
+            UPDATE discogs_releases
+            SET format = ?
+            WHERE discogs_id = ?""", (new_value, discogs_id))
 
 
-def update_mb_primary_type(release_id, new_value, old_value, config):
+def fetch_discogs_release(discogs_id):
 
-    if old_value == new_value:
-        return
-
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'mb_primary_type',
-                                new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'mb_primary_type', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET mb_primary_type = ? WHERE release_id = ?',
-                    (new_value, release_id))
-
-
-def update_version_id(release_id, new_value, old_value, config):
-
-    if old_value == new_value:
-        return
-
-    if config.dry_run:
-        print(row_ignore_change(release_id, 'version_id',
-                                new_value, old_value, 'read-only'))
-        return
-
-    print(row_change(release_id, 'version_id', new_value, old_value))
-    with db_ops(config) as cur:
-        cur.execute('UPDATE items SET version_id = ? WHERE release_id = ?',
-                    (new_value, release_id))
-
-
-def fetch_row_by_discogs_id(discogs_id, config):
-
-    with db_ops(config) as cur:
-        cur.execute('SELECT * FROM items WHERE release_id = ?', (int(discogs_id),))
+    with db_ops() as cur:
+        cur.execute("""
+            SELECT *
+            FROM discogs_releases
+            WHERE discogs_id = ?""", (int(discogs_id),))
         row = cur.fetchone()
 
     return row
 
 
-def fetch_row_by_discogs_id_v2(discogs_id, read_only=False):
+def fetch_musicbrainz_row(discogs_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"""
+        SELECT id, discogs_id, mbid, artist, title, sort_name, country, score
+        FROM mb_matches
+        WHERE discogs_id = {discogs_id}
+        """)
+    item = cursor.fetchone()
+    conn.close()
+    return item
 
-    with db_ops(read_only=read_only) as cur:
-        cur.execute('SELECT * FROM discogs_releases WHERE discogs_id = ?', (int(discogs_id),))
+
+def update_score(discogs_id, new_value):
+
+    with db_ops() as cur:
+        cur.execute("""
+            SELECT score
+            FROM mb_matches
+            WHERE discogs_id = ? """, (discogs_id,))
         row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.score
 
-    return row
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'score', new_value, old_value))
+
+        cur.execute("""
+            UPDATE mb_matches
+            SET score = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
+
+
+def update_mb_format(discogs_id, new_value):
+
+    with db_ops() as cur:
+        cur.execute("""
+            SELECT format
+            FROM mb_matches
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.score
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'format', new_value, old_value))
+
+        cur.execute("""
+            UPDATE mb_matches
+            SET format = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
+
+
+def update_mb_primary_type(discogs_id, new_value):
+
+    with db_ops() as cur:
+        cur.execute("""
+            SELECT primary_type
+            FROM mb_matches
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.primary_type
+
+    if old_value == new_value:
+        return
+
+    print(row_change(discogs_id, 'primary_type', new_value, old_value))
+
+    cur.execute("""
+        UPDATE mb_matches
+        SET primary_type = ?
+        WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
 def insert_row(
-        artist=None,
-        title=None,
-        format=None,
-        mb_primary_type=None,
-        release_date=None,
-        release_id=0,
-        country=None,
-        mb_id=None,
-        mb_artist=None,
-        mb_title=None,
-        sort_name=None,
-        version_id=0,
-        config=None):
-
-    if config.dry_run:
-        print('dry run - not inserted')
-        return
-
-    with db_ops(config) as cur:
-        cur.execute("""
-            INSERT INTO items (artist, title, format, mb_primary_type, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name, version_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-                    (artist, title, format, mb_primary_type, release_date, release_id, country, mb_id, mb_artist, mb_title, sort_name, version_id))
-
-
-def insert_row_v2(
         discogs_id=None,
         artist=None,
         title=None,
         country=None,
         format=None,
         release_date=None,
+        year=None,
         barcodes=None,
         catnos=None,
-        read_only=False):
+        master_id=None):
 
-    if read_only:
-        print('dry run - not inserted')
-        return
-
-    with db_ops(read_only=read_only) as cur:
+    with db_ops() as cur:
         cur.execute("""
-            INSERT INTO discogs_releases (discogs_id, artist, title, country, format, release_date, barcodes, catnos)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO discogs_releases (discogs_id, artist, title, country, format, release_date, year, barcodes, catnos, master_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-                    (discogs_id, artist, title, country, format, release_date, barcodes, catnos))
+                    (discogs_id, artist, title, country, format, release_date, year, barcodes, catnos, master_id))
+
+
+def insert_mb_matches_row(
+        discogs_id=None,
+        mbid=None,
+        artist=None,
+        title=None,
+        sort_name=None,
+        country=None,
+        format=None,
+        primary_type=None,
+        score=None):
+
+    with db_ops() as cur:
+        cur.execute("""
+            INSERT INTO mb_matches (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score))
 
 
 def get_release_date_by_discogs_id(discogs_id, config):
@@ -466,3 +492,35 @@ def fetch_row_by_mb_id(mb_id, config):
         row = cur.fetchone()
 
     return row
+
+
+def db_summarise_row(id, config=None):
+
+    with db_ops() as cur:
+        cur.execute("""
+            SELECT *
+            FROM discogs_releases
+            WHERE discogs_id = ?""", (id,))
+        row = cur.fetchone()
+
+    output = []
+
+    output.append(f'release {id}')
+
+    artist = row.artist
+    if artist:
+        output.append(artist)
+
+    title = row.title
+    if title:
+        output.append(title)
+
+    release_date = row.release_date
+    if release_date:
+        output.append(str(release_date))
+
+    country = row.country
+    if country:
+        output.append(country)
+
+    return ' '.join(output)
