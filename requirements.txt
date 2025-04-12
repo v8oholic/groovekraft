@@ -1,0 +1,3 @@
+# conda install -c conda-forge rapidfuzz
+# or
+# pip install rapidfuzz

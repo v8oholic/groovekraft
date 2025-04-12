@@ -21,8 +21,8 @@ import logging
 import configparser
 
 from modules.db import db_ops, fetch_discogs_release, update_artist, update_barcodes, update_catnos
-from modules.db import update_country, update_format, update_mb_artist, update_title, update_mbid, update_mb_primary_type, update_mb_title
-from modules.db import update_release_date, insert_row, update_sort_name, fetch_row_by_mb_id, initialize_db
+from modules.db import update_country, update_format, update_mb_artist, update_title, update_mb_mbid, update_mb_primary_type, update_mb_title
+from modules.db import update_release_date, insert_row, update_mb_sort_name, fetch_row_by_mb_id, initialize_db
 from modules.db import db_summarise_row
 from modules.discogs_importer import import_from_discogs_v2
 from modules.discogs_importer import connect_to_discogs
@@ -469,7 +469,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         mb_artist = None
         mb_title = None
 
-        update_mbid(row.release_id, mb_id, row.mb_id, config=config)
+        update_mb_mbid(row.release_id, mb_id, row.mb_id, config=config)
         update_mb_artist(row.release_id, mb_artist, row.mb_artist, config=config)
         update_mb_title(row.release_id, mb_title, row.mb_title, config=config)
 
@@ -505,10 +505,10 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     if not mb_sort_name:
         mb_sort_name = mb_artist
 
-    update_mbid(release_id, mb_id, row.mb_id, config=config)
+    update_mb_mbid(release_id, mb_id, row.mb_id, config=config)
     update_mb_artist(release_id, mb_artist, row.mb_artist, config=config)
     update_mb_title(release_id, mb_title, row.mb_title, config=config)
-    update_sort_name(release_id, mb_sort_name, row.sort_name, config=config)
+    update_mb_sort_name(release_id, mb_sort_name, row.sort_name, config=config)
     update_release_date(release_id, release_date, row.release_date, config=config)
     update_format(discogs_release.id, format, row.format, config=config)
     update_mb_primary_type(discogs_release.id, mb_primary_type,
@@ -1085,33 +1085,52 @@ def main(config):
     # update_table(discogs_id=2635834)
     # return
 
-    if args.import_items:
-        if V2:
+    if V2:
+
+        if args.import_items:
             import_from_discogs_v2(config=config)
             match_discogs_against_mb(config=config)
-        else:
+
+        elif args.update_items:
+            match_discogs_against_mb(config=config)
+
+        elif args.scrape:
+            scrape_discogs(config=config)
+
+        elif args.match:
+            match(config=config)
+
+        elif args.random:
+            random_selection(config=config)
+
+        elif args.onthisday:
+            on_this_day(config=config)
+
+        elif args.status:
+            status(config=config)
+
+    else:
+
+        if args.import_items:
             import_from_discogs(config=config)
 
-    elif args.update_items:
-        if V2:
-            match_discogs_against_mb(config=config)
-        else:
+        elif args.update_items:
             update_table(config=config)
 
-    elif args.scrape:
-        scrape_discogs(config=config)
+        elif args.scrape:
+            scrape_discogs(config=config)
 
-    elif args.match:
-        match(config=config)
+        elif args.match:
+            match(config=config)
 
-    elif args.random:
-        random_selection(config=config)
+        elif args.random:
+            random_selection(config=config)
 
-    elif args.onthisday:
-        on_this_day(config=config)
+        elif args.onthisday:
+            on_this_day(config=config)
 
-    elif args.status:
-        status(config=config)
+        elif args.status:
+            status(config=config)
 
 
 if __name__ == "__main__":
