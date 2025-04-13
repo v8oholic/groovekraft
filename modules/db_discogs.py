@@ -178,7 +178,7 @@ def set_master_id(discogs_id, new_value):
             WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def set_release_date(discogs_id, new_value):
+def set_release_date(discogs_id, new_value, force=False):
 
     with db_ops() as cur:
         cur.execute("""
@@ -193,7 +193,7 @@ def set_release_date(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        if earliest_date(old_value, new_value) == old_value:
+        if not force and earliest_date(old_value, new_value) == old_value:
             return
 
         # if old_value is not None and len(new_value) < len(old_value):

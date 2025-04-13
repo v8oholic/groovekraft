@@ -140,7 +140,7 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
     return ' '.join(output)
 
 
-def import_from_discogs_v2(config=None):
+def import_from_discogs(config=None):
 
     discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
 
