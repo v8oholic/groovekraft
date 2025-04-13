@@ -621,7 +621,7 @@ def mb_summarise_release(mb_release=None, mbid=None):
         x = mb_release.get('artist-credit-phrase')
         if not x:
             load_mbid = mb_release.get('id')
-        x = mb_release.get('medium-list')
+        x = mb_release.get('medium-count')
         if not x:
             load_mbid = mb_release.get('id')
     else:
@@ -672,12 +672,7 @@ def mb_summarise_release(mb_release=None, mbid=None):
         catnos = ','.join(label_catnos)
         output.append(catnos)
 
-    media = mb_release.get('medium-list')
-    if media and len(media):
-        first_media = media[0]
-        format = first_media.get('format')
-        if format:
-            output.append(format)
+    format = mb_get_format(mb_release=mb_release)
 
     return ' '.join(output)
 
@@ -1232,39 +1227,27 @@ def match_release_in_musicbrainz(discogs_id):
             return
 
     # try some other searches
-    for barcode in barcodes:
-        result = musicbrainzngs.search_releases(barcode=barcode)
-        releases = result['release-list']
-        if len(releases):
-            best_release_group, best_release, best_match_score = disambiguate_releases(
-                releases,
-                artist=artist,
-                title=title,
-                country=country,
-                format=format,
-                catnos=catnos,
-                barcodes=barcodes
-            )
+    if barcodes and len(barcodes) and mb_match_barcodes(
+            discogs_id=discogs_id,
+            artist=artist,
+            title=title,
+            country=country,
+            format=format,
+            catnos=catnos,
+            barcodes=barcodes):
 
-            if best_match_score > MINIMUM_SCORE:
-                return best_release_group, best_release, best_match_score
+        return
 
-    for catno in catnos:
-        result = musicbrainzngs.search_releases(catno=catno)
-        releases = result['release-list']
-        if len(releases):
-            best_release_group, best_release, best_match_score = disambiguate_releases(
-                releases,
-                artist=artist,
-                title=title,
-                country=country,
-                format=format,
-                catnos=catnos,
-                barcodes=barcodes
-            )
+    if catnos and len(catnos) and mb_match_catnos(
+            discogs_id=discogs_id,
+            artist=artist,
+            title=title,
+            country=country,
+            format=format,
+            catnos=catnos,
+            barcodes=barcodes):
 
-            if best_match_score > MINIMUM_SCORE:
-                return best_release_group, best_release, best_match_score
+        return
 
     # attempt to match release group and release, and derive release date
     mb_release_group, mb_release, best_match_score = mb_find_release_group_and_release(
@@ -1362,6 +1345,108 @@ def match_release_in_musicbrainz(discogs_id):
         best_match_score=best_match_score)
 
 
+def mb_match_barcodes(
+    discogs_id,
+    artist,
+    title,
+    country,
+    format,
+    catnos,
+    barcodes
+):
+
+    mb_release_group = None
+    mb_release = None
+    best_match_score = 0
+    candidates = []
+
+    for barcode in barcodes:
+        result = musicbrainzngs.search_releases(barcode=barcode)
+        releases = result['release-list']
+        if len(releases):
+            candidates.extend(releases)
+
+    if len(candidates):
+        mb_release_group, mb_release, best_match_score = disambiguate_releases(
+            releases,
+            artist=artist,
+            title=title,
+            country=country,
+            format=format,
+            catnos=catnos,
+            barcodes=barcodes
+        )
+
+    if best_match_score < MINIMUM_SCORE:
+        return False
+
+    if best_match_score == PERFECT_SCORE:
+        print(
+            f'💯 {best_match_score}% match {mb_summarise_release(mbid=mb_release.get('id'))}')
+    elif best_match_score > MINIMUM_SCORE:
+        print(
+            f'📈 {best_match_score}% match {mb_summarise_release(mbid=mb_release.get('id'))}')
+
+    update_tables_after_match(
+        discogs_id=discogs_id,
+        mb_release=mb_release,
+        mb_release_group=mb_release_group,
+        best_match_score=best_match_score)
+
+    return True
+
+
+def mb_match_catnos(
+    discogs_id,
+    artist,
+    title,
+    country,
+    format,
+    catnos,
+    barcodes
+):
+
+    mb_release_group = None
+    mb_release = None
+    best_match_score = 0
+    candidates = []
+
+    for catno in catnos:
+        result = musicbrainzngs.search_releases(catno=catno)
+        releases = result['release-list']
+        if len(releases):
+            candidates.extend(releases)
+
+    if len(candidates):
+        mb_release_group, mb_release, best_match_score = disambiguate_releases(
+            releases,
+            artist=artist,
+            title=title,
+            country=country,
+            format=format,
+            catnos=catnos,
+            barcodes=barcodes
+        )
+
+    if best_match_score < MINIMUM_SCORE:
+        return False
+
+    if best_match_score == PERFECT_SCORE:
+        print(
+            f'💯 {best_match_score}% match {mb_summarise_release(mbid=mb_release.get('id'))}')
+    elif best_match_score > MINIMUM_SCORE:
+        print(
+            f'📈 {best_match_score}% match {mb_summarise_release(mbid=mb_release.get('id'))}')
+
+    update_tables_after_match(
+        discogs_id=discogs_id,
+        mb_release=mb_release,
+        mb_release_group=mb_release_group,
+        best_match_score=best_match_score)
+
+    return True
+
+
 def disambiguate_releases(
         candidates,
         artist=None,
@@ -1414,7 +1499,7 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
     if not all([
         mb_release.get('label-info-count'),
         mb_release.get('artist-credit-phrase'),
-        mb_release.get('medium-list')
+        mb_release.get('medium-count')
     ]):
         # reload the release including the missing sections
         mb_release = musicbrainzngs.get_release_by_id(
@@ -1461,7 +1546,7 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
     sort_name = mb_release['artist-credit'][0]['artist']['sort-name']
     country = mb_release.get('country')
     primary_type = mb_release_group['primary-type']
-    format = mb_release['medium-list'][0]['format']
+    format = mb_get_format(mb_release=mb_release)
 
     release_date = earliest_date(mb_release.get('date'), mb_release_group['first-release-date'])
 
