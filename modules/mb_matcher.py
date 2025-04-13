@@ -1309,7 +1309,7 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
         # nothing further can be done with this release at this time, but certain fields
         # should be unset if present
         # TODO more columns? delete row? unset matched at, for example
-        with db.db_ops() as cur:
+        with db.context_manager() as cur:
             cur.execute("""
                 UPDATE mb_matches
                 SET mbid = ?, artist = ?, title = ?

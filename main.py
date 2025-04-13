@@ -94,7 +94,7 @@ def scrape_discogs(config):
     discogs_client, discogs_access_token, discogs_access_secret = discogs_importer.connect_to_discogs(
         config)
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
 
         cur.execute("""
             SELECT *
@@ -223,9 +223,7 @@ def fls(data_str, length):
 
 def match(config):
 
-    set_date = None
-
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
 
         cur.execute(f"""
             SELECT *
@@ -305,7 +303,7 @@ def status(config):
 
     output_nvp('releases on Discogs', len(folder.releases))
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
 
         cur.execute("""
             SELECT COUNT(*) as count
@@ -363,7 +361,7 @@ def status(config):
 
 def random_selection():
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
 
         cur.execute("""
             SELECT *
@@ -397,7 +395,7 @@ def output_row(row):
 
 def on_this_day(today_str='', config=None):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
 
         cur.execute("""
             SELECT *

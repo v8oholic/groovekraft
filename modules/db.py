@@ -88,7 +88,7 @@ def initialize_db(db_path=DB_PATH):
 
 
 @contextmanager
-def db_ops(db_path=DB_PATH, read_only=False):
+def context_manager(db_path=DB_PATH, read_only=False):
     """Wrapper to take care of committing and closing a database
 
     See https://stackoverflow.com/questions/67436362/decorator-for-sqlite3/67436763
@@ -128,7 +128,7 @@ def row_ignore_change(release_id, data_name, data_to, data_from, reason):
 
 def get_release_date_by_discogs_id(discogs_id, config):
 
-    with db_ops(config) as cur:
+    with context_manager(config) as cur:
         cur.execute('SELECT * FROM items WHERE release_id = ?', (int(discogs_id),))
         row = cur.fetchone()
 
@@ -140,7 +140,7 @@ def get_release_date_by_discogs_id(discogs_id, config):
 
 def fetch_row_by_mb_id(mb_id, config):
 
-    with db_ops(config) as cur:
+    with context_manager(config) as cur:
         cur.execute('SELECT * FROM items WHERE mb_id = ?', (mb_id,))
         row = cur.fetchone()
 
@@ -149,7 +149,7 @@ def fetch_row_by_mb_id(mb_id, config):
 
 def db_summarise_row(id, config=None):
 
-    with db_ops() as cur:
+    with context_manager() as cur:
         cur.execute("""
             SELECT *
             FROM discogs_releases

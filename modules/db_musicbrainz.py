@@ -3,7 +3,7 @@ from modules import db
 
 def set_mbid(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             SELECT mbid
             FROM mb_matches
@@ -25,7 +25,7 @@ def set_mbid(discogs_id, new_value):
 
 def set_artist(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT artist
             FROM mb_matches
@@ -47,7 +47,7 @@ def set_artist(discogs_id, new_value):
 
 def set_title(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT title
             FROM mb_matches
@@ -69,7 +69,7 @@ def set_title(discogs_id, new_value):
 
 def set_country(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT country
             FROM mb_matches
@@ -91,7 +91,7 @@ def set_country(discogs_id, new_value):
 
 def set_format(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             SELECT format
             FROM mb_matches
@@ -114,7 +114,7 @@ def set_format(discogs_id, new_value):
 
 def set_primary_type(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             SELECT primary_type
             FROM mb_matches
@@ -136,7 +136,7 @@ def set_primary_type(discogs_id, new_value):
 
 def set_score(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             SELECT score
             FROM mb_matches
@@ -158,7 +158,7 @@ def set_score(discogs_id, new_value):
 
 def set_release_date(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             SELECT release_date
             FROM mb_matches
@@ -180,7 +180,7 @@ def set_release_date(discogs_id, new_value):
 
 def set_sort_name(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT sort_name
             FROM mb_matches
@@ -212,7 +212,7 @@ def insert_row(
         score=None,
         release_date=None):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             INSERT INTO mb_matches (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score, release_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

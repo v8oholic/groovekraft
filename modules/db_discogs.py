@@ -4,7 +4,7 @@ from modules import utils
 
 def set_artist(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT artist
             FROM discogs_releases
@@ -26,7 +26,7 @@ def set_artist(discogs_id, new_value):
 
 def set_title(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT title
             FROM discogs_releases
@@ -48,7 +48,7 @@ def set_title(discogs_id, new_value):
 
 def set_format(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT format
             FROM discogs_releases
@@ -70,7 +70,7 @@ def set_format(discogs_id, new_value):
 
 def set_country(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT country
             FROM discogs_releases
@@ -92,7 +92,7 @@ def set_country(discogs_id, new_value):
 
 def set_barcodes(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT barcodes
             FROM discogs_releases
@@ -114,7 +114,7 @@ def set_barcodes(discogs_id, new_value):
 
 def set_catnos(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT catnos
             FROM discogs_releases
@@ -136,7 +136,7 @@ def set_catnos(discogs_id, new_value):
 
 def set_year(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT year
             FROM discogs_releases
@@ -158,7 +158,7 @@ def set_year(discogs_id, new_value):
 
 def set_master_id(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT master_id
             FROM discogs_releases
@@ -180,7 +180,7 @@ def set_master_id(discogs_id, new_value):
 
 def set_release_date(discogs_id, new_value, force=False):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             SELECT release_date
             FROM discogs_releases
@@ -213,7 +213,7 @@ def set_release_date(discogs_id, new_value, force=False):
 
 def set_sort_name(discogs_id, new_value):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute(f"""
             SELECT sort_name
             FROM discogs_releases
@@ -246,7 +246,7 @@ def insert_row(
         sort_name=None,
         master_id=None):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             INSERT INTO discogs_releases (discogs_id, artist, title, country, format, year, barcodes, catnos, release_date, sort_name, master_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -255,7 +255,7 @@ def insert_row(
 
 def fetch_row(discogs_id):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute("""
             SELECT *
             FROM discogs_releases
@@ -276,7 +276,7 @@ def fetch_discogs_release_rows():
 
 def fetch_row_by_discogs_id(discogs_id):
 
-    with db.db_ops() as cur:
+    with db.context_manager() as cur:
         cur.execute('SELECT * FROM items WHERE release_id = ?', (discogs_id,))
         row = cur.fetchone()
 
