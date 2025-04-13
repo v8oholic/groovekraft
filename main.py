@@ -20,9 +20,10 @@ import dateparser
 import logging
 import configparser
 
-from modules.db import db_ops
+from modules.db_discogs import set_release_date
+from modules.db import db_ops, fetch_row_by_discogs_id, fetch_discogs_release_rows
 from modules.db_musicbrainz import set_primary_type, set_sort_name
-from modules.db import fetch_row_by_mb_id, initialize_db
+from modules.db import initialize_db
 from modules.db import db_summarise_row
 from modules.db_musicbrainz import set_artist, set_mbid, set_title
 from modules.discogs_importer import import_from_discogs_v2
@@ -890,9 +891,8 @@ def match_v2(config=None):
 
             for row in rows:
 
-                artist = row.mb_artist if row.mb_artist else row.artist if row.artist else 'Unknown artist'
                 artist = row.artist
-                title = row.mb_title if row.mb_title else row.title if row.title else 'Unknown title'
+                title = row.title
 
                 format = row.format if row.format else ''
                 release_date = row.release_date if row.release_date else ''
@@ -917,7 +917,7 @@ def match_v2(config=None):
                         print('='*len(artist))
 
                     print(
-                        f'{row.release_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+                        f'{row.discogs_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
 
 
 def status(config):
@@ -1022,6 +1022,99 @@ def status(config):
         row = cur.fetchone()
 
         output_nvp('releases with full release date', row.count)
+
+
+def status_v2(config):
+
+    def output_nvp(label, value):
+        print(f'{fls(label, 45)}: {value}')
+
+    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
+
+    # fetch the identity object for the current logged in user.
+    discogs_user = discogs_client.identity()
+
+    output_nvp("Discogs username", discogs_user.username)
+    output_nvp("MusicBrainz username", config.username)
+
+    folder = discogs_user.collection_folders[0]
+
+    output_nvp('releases on Discogs', len(folder.releases))
+
+    with db_ops() as cur:
+
+        cur.execute("""
+            SELECT COUNT(*) as count
+            FROM discogs_releases
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releasees in local database', row.count)
+
+        cur.execute("""
+            SELECT COUNT(*) as count
+            FROM mb_matches
+            WHERE mbid IS NOT NULL
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases matched in MusicBrainz', row.count)
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM discogs_releases
+            WHERE release_date IS NULL
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases with no release date', row.count)
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM discogs_releases
+            WHERE LENGTH(release_date) = 4
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases with just release year', row.count)
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM discogs_releases
+            WHERE LENGTH(release_date) = 7
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases with just release month and year', row.count)
+
+        cur.execute(f"""
+            SELECT COUNT(*) as count
+            FROM discogs_releases
+            WHERE LENGTH(release_date) = 10
+        """)
+        row = cur.fetchone()
+
+        output_nvp('releases with full release date', row.count)
+
+
+def random_selection_v2():
+
+    with db_ops() as cur:
+
+        cur.execute("""
+            SELECT *
+            FROM discogs_releases
+            ORDER BY RANDOM()
+            LIMIT 1
+        """)
+
+        row = cur.fetchone()
+
+        print()
+        print('random selection:')
+        print()
+        output_row_v2(row)
+        print()
 
 
 def random_selection(config):
@@ -1278,6 +1371,23 @@ def on_this_day(today_str='', config=None):
                 print()
 
 
+def import_release_dates(config=None):
+
+    # scan all Discogs releases
+
+    rows = fetch_discogs_release_rows()
+
+    for index, row in enumerate(rows):
+
+        print(f'⚙️ {index+1}/{len(rows)} {db_summarise_row(row.discogs_id)}')
+
+        # fetch the old row
+        old_item = fetch_row_by_discogs_id(row.discogs_id)
+        if old_item:
+            release_date = earliest_date(old_item.release_date, row.release_date)
+            set_release_date(row.discogs_id, release_date)
+
+
 def main(config):
 
     initialize_db()
@@ -1287,10 +1397,12 @@ def main(config):
     # return
 
     if V2:
+        # import_release_dates(config=config)
 
         if args.import_items:
             import_from_discogs_v2(config=config)
             match_discogs_against_mb(config=config)
+            import_release_dates(config=config)
 
         elif args.update_items:
             match_discogs_against_mb(config=config)
@@ -1302,13 +1414,13 @@ def main(config):
             match_v2(config=config)
 
         elif args.random:
-            random_selection(config=config)
+            random_selection_v2()
 
         elif args.onthisday:
             on_this_day_v2(config=config)
 
         elif args.status:
-            status(config=config)
+            status_v2(config=config)
 
     else:
 

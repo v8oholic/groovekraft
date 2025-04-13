@@ -1370,7 +1370,7 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
     title = mb_release.get('title')
     sort_name = mb_release['artist-credit'][0]['artist']['sort-name']
     country = mb_release.get('country')
-    primary_type = mb_release_group['primary-type']
+    primary_type = mb_release_group.get('primary-type')
     format = mb_get_format(mb_release=mb_release)
 
     release_date = earliest_date(mb_release.get('date'), mb_release_group['first-release-date'])
@@ -1422,6 +1422,8 @@ def match_discogs_against_mb(config=None):
         sys.exit(1)
 
     musicbrainzngs.set_rate_limit(1, 1)
+
+    # match_release_in_musicbrainz(1897847)
 
     rows = fetch_discogs_release_rows()
 

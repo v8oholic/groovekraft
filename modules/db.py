@@ -156,6 +156,15 @@ def fetch_row_by_mb_id(mb_id, config):
     return row
 
 
+def fetch_row_by_discogs_id(discogs_id):
+
+    with db_ops() as cur:
+        cur.execute('SELECT * FROM items WHERE release_id = ?', (discogs_id,))
+        row = cur.fetchone()
+
+    return row
+
+
 def db_summarise_row(id, config=None):
 
     with db_ops() as cur:

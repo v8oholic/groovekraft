@@ -202,4 +202,4 @@ def import_from_discogs_v2(config=None):
                 catnos=catnos if catnos else None,
                 master_id=master_id,
                 sort_name=artist,
-                release_date=release.year)
+                release_date=earliest_date(None, year))
