@@ -167,6 +167,17 @@ def trim_if_ends_with_number_in_brackets(s):
     return re.sub(pattern, '', s)
 
 
+def sanitise_compare_string(tmp):
+    if tmp is None:
+        return ''
+
+    tmp = tmp.casefold()
+    tmp = ''.join(chr for chr in tmp if (chr.isalnum()) or chr == ' ')
+
+    output = ' '.join(tmp.split())
+    return output
+
+
 def convert_country_from_discogs_to_musicbrainz(discogs_country):
     musicbrainz_country = COUNTRIES.get(normalize_country_name(discogs_country))
     if not musicbrainz_country:

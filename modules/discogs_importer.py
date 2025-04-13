@@ -4,8 +4,8 @@
 import discogs_client
 from discogs_client.exceptions import HTTPError
 
-from .db import update_artist, update_barcodes, update_format, update_catnos, update_country, update_title, update_master_id
-from .db import fetch_discogs_release, insert_row, update_release_date, update_year
+from .db import update_discogs_artist, update_discogs_barcodes, update_discogs_format, update_discogs_catnos, update_discogs_country, update_discogs_title, update_discogs_master_id
+from .db import fetch_discogs_release, insert_row, update_discogs_release_date, update_discogs_year, update_discogs_sort_name
 
 from .utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name, earliest_date
 
@@ -178,15 +178,16 @@ def import_from_discogs_v2(config=None):
         if row:
             release_date = earliest_date(row.release_date, year)
 
-            update_artist(release.id, artist, row.artist)
-            update_title(release.id, title, row.title)
-            update_format(release.id, format, row.format)
-            update_country(release.id, country, row.country)
-            update_barcodes(release.id, barcodes if barcodes else None, row.barcodes)
-            update_catnos(release.id, catnos if catnos else None, row.catnos)
-            update_year(release.id, year, row.year)
-            update_release_date(release.id, release_date, row.release_date)
-            update_catnos(release.id, catnos if catnos else None, row.catnos)
+            update_discogs_artist(release.id, artist)
+            update_discogs_title(release.id, title)
+            update_discogs_format(release.id, format)
+            update_discogs_country(release.id, country)
+            update_discogs_barcodes(release.id, barcodes if barcodes else None)
+            update_discogs_catnos(release.id, catnos if catnos else None)
+            update_discogs_year(release.id, year, row.year)
+            update_discogs_release_date(release.id, release_date, row.release_date)
+            if not row.sort_name:
+                update_discogs_sort_name(release.id, artist)
 
         else:
 

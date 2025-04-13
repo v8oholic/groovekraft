@@ -36,6 +36,7 @@ def initialize_db(db_path=DB_PATH):
             format TEXT,
             master_id INTEGER,
             release_date TEXT,
+            sort_name TEXT,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
     """)
@@ -60,12 +61,12 @@ def initialize_db(db_path=DB_PATH):
             mbid TEXT,
             artist TEXT,
             title TEXT,
-            sort_name TEXT,
             country TEXT,
             format TEXT,
             primary_type TEXT,
             score INTEGER,
             release_date TEXT,
+            sort_name SORT_NAME,
             matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (discogs_id) REFERENCES discogs_releases (discogs_id)
         );
@@ -135,54 +136,92 @@ def row_ignore_change(release_id, data_name, data_to, data_from, reason):
     return f'⛔️ {reason} {data_name} not set to {data_to} (still {data_from}) for release {release_id}'
 
 
-def update_artist(release_id, new_value, old_value):
+def update_discogs_artist(discogs_id, new_value):
 
-    if old_value == new_value:
-        return
-
-    print(row_change(release_id, 'artist', new_value, old_value))
     with db_ops() as cur:
+        cur.execute(f"""
+            SELECT artist
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.artist
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'artist', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET artist = ?
-            WHERE discogs_id = ?""", (new_value, release_id))
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_title(release_id, new_value, old_value):
-    if old_value == new_value:
-        return
+def update_discogs_title(discogs_id, new_value):
 
-    print(row_change(release_id, 'title', new_value, old_value))
     with db_ops() as cur:
+        cur.execute(f"""
+            SELECT title
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.title
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'title', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET title = ?
-            WHERE discogs_id = ?""", (new_value, release_id))
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_master_id(release_id, new_value, old_value):
+def update_discogs_master_id(discogs_id, new_value, old_value):
 
-    if old_value == new_value:
-        return
-
-    print(row_change(release_id, 'master_id', new_value, old_value))
     with db_ops() as cur:
+        cur.execute(f"""
+            SELECT master_id
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.master_id
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'master_id', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET master_id = ?
-            WHERE discogs_id = ?""", (int(new_value), release_id))
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_year(release_id, new_value, old_value):
-    if old_value == new_value:
-        return
+def update_discogs_year(discogs_id, new_value):
 
-    print(row_change(release_id, 'year', new_value, old_value))
     with db_ops() as cur:
+        cur.execute(f"""
+            SELECT year
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.year
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'year', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET year = ?
-            WHERE discogs_id = ?""", (new_value, release_id))
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
 def update_mb_mbid(discogs_id, new_value):
@@ -269,6 +308,28 @@ def update_mb_sort_name(discogs_id, new_value):
         print(row_change(discogs_id, 'sort_name', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
+            SET sort_name = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
+
+
+def update_discogs_sort_name(discogs_id, new_value):
+
+    with db_ops() as cur:
+        cur.execute(f"""
+            SELECT sort_name
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.sort_name
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'sort_name', new_value, old_value))
+        cur.execute("""
+            UPDATE discogs_releases
             SET sort_name = ?
             WHERE discogs_id = ? """, (new_value, discogs_id))
 
@@ -384,7 +445,7 @@ def update_mb_release_date(discogs_id, new_value):
             WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_release_date(discogs_id, new_value):
+def update_discogs_release_date(discogs_id, new_value):
 
     with db_ops() as cur:
         cur.execute("""
@@ -423,56 +484,92 @@ def update_release_date(discogs_id, new_value):
             WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_country(discogs_id, new_value, old_value):
+def update_discogs_country(discogs_id, new_value):
 
-    if old_value == new_value:
-        return
-
-    print(row_change(discogs_id, 'country', new_value, old_value))
     with db_ops() as cur:
+        cur.execute(f"""
+            SELECT country
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.country
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'country', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET country = ?
-            WHERE discogs_id = ?""", (new_value, discogs_id))
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_barcodes(discogs_id, new_value, old_value):
+def update_discogs_barcodes(discogs_id, new_value):
 
-    if old_value == new_value:
-        return
-
-    print(row_change(discogs_id, 'barcodes', new_value, old_value))
     with db_ops() as cur:
+        cur.execute(f"""
+            SELECT barcodes
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.barcodes
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'barcodes', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET barcodes = ?
             WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_catnos(discogs_id, new_value, old_value):
+def update_discogs_catnos(discogs_id, new_value):
 
-    if old_value == new_value:
-        return
-
-    print(row_change(discogs_id, 'catnos', new_value, old_value))
     with db_ops() as cur:
+        cur.execute(f"""
+            SELECT catnos
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.catnos
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'catnos', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET catnos = ?
-            WHERE discogs_id = ?""", (new_value, discogs_id))
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def update_format(discogs_id, new_value, old_value):
+def update_discogs_format(discogs_id, new_value):
 
-    if old_value == new_value:
-        return
-
-    print(row_change(discogs_id, 'format', new_value, old_value))
     with db_ops() as cur:
+        cur.execute(f"""
+            SELECT format
+            FROM discogs_releases
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = row.format
+
+        if old_value == new_value:
+            return
+
+        print(row_change(discogs_id, 'format', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET format = ?
-            WHERE discogs_id = ?""", (new_value, discogs_id))
+            WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
 def fetch_discogs_release(discogs_id):
@@ -524,23 +621,23 @@ def update_mb_format(discogs_id, new_value):
 
 
 def insert_row(
-        discogs_id=None,
+        discogs_id,
         artist=None,
         title=None,
         country=None,
         format=None,
-        release_date=None,
         year=None,
         barcodes=None,
         catnos=None,
+        release_date=None,
+        sort_name=None,
         master_id=None):
 
     with db_ops() as cur:
         cur.execute("""
-            INSERT INTO discogs_releases (discogs_id, artist, title, country, format, release_date, year, barcodes, catnos, master_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-                    (discogs_id, artist, title, country, format, release_date, year, barcodes, catnos, master_id))
+            INSERT INTO discogs_releases (discogs_id, artist, title, country, format, year, barcodes, catnos, release_date, sort_name, master_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (discogs_id, artist, title, country, format, year, barcodes, catnos, release_date, sort_name, master_id))
 
 
 def insert_mb_matches_row(
@@ -552,13 +649,14 @@ def insert_mb_matches_row(
         country=None,
         format=None,
         primary_type=None,
-        score=None):
+        score=None,
+        release_date=None):
 
     with db_ops() as cur:
         cur.execute("""
-            INSERT INTO mb_matches (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score))
+            INSERT INTO mb_matches (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score, release_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score, release_date))
 
 
 def get_release_date_by_discogs_id(discogs_id, config):

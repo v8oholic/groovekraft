@@ -20,9 +20,9 @@ import dateparser
 import logging
 import configparser
 
-from modules.db import db_ops, fetch_discogs_release, update_artist, update_barcodes, update_catnos
-from modules.db import update_country, update_format, update_mb_artist, update_title, update_mb_mbid, update_mb_primary_type, update_mb_title
-from modules.db import update_release_date, insert_row, update_mb_sort_name, fetch_row_by_mb_id, initialize_db
+from modules.db import db_ops, fetch_discogs_release, update_discogs_artist, update_discogs_barcodes, update_discogs_catnos
+from modules.db import update_discogs_country, update_discogs_format, update_mb_artist, update_discogs_title, update_mb_mbid, update_mb_primary_type, update_mb_title
+from modules.db import update_discogs_release_date, insert_row, update_mb_sort_name, fetch_row_by_mb_id, initialize_db
 from modules.db import db_summarise_row
 from modules.discogs_importer import import_from_discogs_v2
 from modules.discogs_importer import connect_to_discogs
@@ -30,7 +30,7 @@ from modules.discogs_importer import discogs_summarise_release
 from modules.mb_matcher import match_discogs_against_mb
 from modules.mb_matcher import disambiguator_score
 from modules.mb_matcher import find_match_by_discogs_link
-from modules.mb_matcher import mb_find_release_group_and_release
+from modules.mb_matcher import mb_find_release_group_releases
 from modules.mb_matcher import mb_find_releases
 from modules.mb_matcher import mb_summarise_release
 from modules.utils import convert_country_from_discogs_to_musicbrainz
@@ -282,7 +282,7 @@ def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
 
             # only use the date if it's earlier than the existing one
             release_date = earliest_date(row.release_date, release_date_str)
-            update_release_date(row.release_id, release_date, config)
+            update_discogs_release_date(row.release_id, release_date, config)
 
 
 def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None, version_id=0, config=None):
@@ -328,7 +328,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
 
     if not mb_release:
         # attempt to match release group and release, and derive release date
-        mb_release_group, mb_release, release_date = mb_find_release_group_and_release(
+        mb_release_group, mb_release, release_date = mb_find_release_group_releases(
             artist=artist_name,
             title=release_title,
             primary_type=mb_primary_type,
@@ -429,14 +429,14 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         if not release_date:
             release_date = earliest_date(row.release_date, discogs_release.year)
 
-        update_artist(discogs_release.id, artist_name, row.artist, config=config)
-        update_title(discogs_release.id, release_title, row.title, config=config)
-        update_format(discogs_release.id, format, row.format, config=config)
+        update_discogs_artist(discogs_release.id, artist_name, row.artist, config=config)
+        update_discogs_title(discogs_release.id, release_title, row.title, config=config)
+        update_discogs_format(discogs_release.id, format, row.format, config=config)
         update_mb_primary_type(discogs_release.id, mb_primary_type,
                                row.mb_primary_type, config=config)
-        update_country(discogs_release.id, mb_country, row.country, config=config)
-        update_release_date(discogs_release.id, release_date,
-                            row.release_date, config=config)
+        update_discogs_country(discogs_release.id, mb_country, row.country, config=config)
+        update_discogs_release_date(discogs_release.id, release_date,
+                                    row.release_date, config=config)
 
     else:
 
@@ -509,8 +509,8 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     update_mb_artist(release_id, mb_artist, row.mb_artist, config=config)
     update_mb_title(release_id, mb_title, row.mb_title, config=config)
     update_mb_sort_name(release_id, mb_sort_name, row.sort_name, config=config)
-    update_release_date(release_id, release_date, row.release_date, config=config)
-    update_format(discogs_release.id, format, row.format, config=config)
+    update_discogs_release_date(release_id, release_date, row.release_date, config=config)
+    update_discogs_format(discogs_release.id, format, row.format, config=config)
     update_mb_primary_type(discogs_release.id, mb_primary_type,
                            row.mb_primary_type, config=config)
 
@@ -711,7 +711,161 @@ def match(config=None):
 
                 row = cur.fetchone()
 
-                update_release_date(row.release_id, set_date, row.release_date, config)
+                update_discogs_release_date(row.release_id, set_date, row.release_date, config)
+                return
+
+        max_title_len = 45
+
+        artist_len = 0
+        title_len = 0
+        format_len = 0
+        release_date_len = 0
+
+        for p in range(2):
+            if p == 0:
+                artist_len = 0
+                title_len = 0
+                format_len = 0
+                release_date_len = 0
+
+                last_artist = None
+            else:
+                title_len = min(title_len, max_title_len)
+
+            for row in rows:
+
+                artist = row.mb_artist if row.mb_artist else row.artist if row.artist else 'Unknown artist'
+                artist = row.artist
+                title = row.mb_title if row.mb_title else row.title if row.title else 'Unknown title'
+
+                format = row.format if row.format else ''
+                release_date = row.release_date if row.release_date else ''
+
+                if config.release_date:
+                    delta = humanize_date_delta(row.release_date)
+
+                if p == 0:
+                    artist_len = max(artist_len, len(artist))
+                    title_len = max(title_len, len(title))
+
+                    format_len = max(format_len, len(format))
+                    release_date_len = max(release_date_len, len(release_date))
+                else:
+                    # logging.debug(
+                    #     f"{row.release_id:>8} {artist:20} {title:20} {format:10} {release_date:10}")
+                    # logging.debug(
+                    #     f'{row.release_id:>8} {fls(artist, artist_len)} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+                    if artist != last_artist:
+                        last_artist = artist
+                        print(artist)
+                        print('='*len(artist))
+
+                    print(
+                        f'{row.release_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+
+
+def match_v2(config=None):
+
+    set_date = None
+
+    with db_ops() as cur:
+
+        cur.execute(f"""
+            SELECT *
+            FROM discogs_releases
+            WHERE artist LIKE '%{config.match}%'
+            OR title LIKE '%{config.match}%'
+            OR sort_name LIKE '%{config.match}%'
+            ORDER BY artist, release_date, title, discogs_id
+        """)
+
+        rows = cur.fetchall()
+        if len(rows) == 0:
+            print('no matching items')
+            return
+
+        if config.release_date:
+
+            if len(config.release_date) > 10:
+                # try day, month and year match first
+                formats = ['%-d %b %Y']
+                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
+                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['day', 'month', 'year']}
+                date_object = dateparser.parse(
+                    config.release_date, date_formats=formats, settings=settings)
+
+                if date_object:
+                    set_date = date_object.strftime('%Y-%m-%d')
+
+            elif len(config.release_date) == 10:
+                # try day, month and year match first
+                formats = ["%Y-%m-%d", '%-d %B %Y']
+                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
+                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['day', 'month', 'year']}
+                date_object = dateparser.parse(
+                    config.release_date, date_formats=formats, settings=settings)
+
+                if date_object:
+                    set_date = date_object.strftime('%Y-%m-%d')
+
+            if len(config.release_date) == 8:
+                # try month and year
+                formats = ["'b %Y"]
+                settings = {'PREFER_DAY_OF_MONTH': 'first', 'REQUIRE_PARTS': ['month', 'year']}
+                # settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
+                #             'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['month', 'year']}
+
+                date_object = dateparser.parse(
+                    config.release_date, date_formats=formats, settings=settings)
+
+                if date_object:
+                    set_date = date_object.strftime("%Y-%m")
+
+            if len(config.release_date) == 7:
+                # try month and year
+                formats = ["%Y-%m"]
+                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
+                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['month', 'year']}
+
+                date_object = dateparser.parse(
+                    config.release_date, date_formats=formats, settings=settings)
+
+                if date_object:
+                    set_date = date_object.strftime("%Y-%m")
+
+            if len(config.release_date) == 4:
+                # try for just a year
+                formats = ["%Y"]
+                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
+                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['year']}
+
+                date_object = dateparser.parse(
+                    config.release_date, date_formats=formats, settings=settings)
+
+                if date_object:
+                    set_date = date_object.strftime("%Y")
+
+            if not set_date:
+                print(f'invalid date {config.release_date}')
+                return
+
+        if set_date:
+            if set_date and len(rows) > 1:
+                print('more than one item matched, release date not set')
+                return
+            else:
+                cur.execute(f"""
+                    SELECT *
+                    FROM discogs_releases
+                    WHERE artist LIKE '%{config.match}%'
+                    OR title LIKE '%{config.match}%'
+                    OR sort_name LIKE '%{config.match}%'
+                    ORDER BY artist, release_date, title, discogs_id
+                """)
+
+                row = cur.fetchone()
+
+                update_discogs_release_date(row.discogs_id, set_date, row.release_date, config)
                 return
 
         max_title_len = 45
@@ -888,6 +1042,20 @@ def random_selection(config):
         print()
 
 
+def output_row_v2(row):
+    if row.release_date:
+        delta = humanize_date_delta(row.release_date)
+
+    print(f'released        : {delta}')
+    print(f'artist          : {row.artist}')
+    print(f'title           : {row.title}')
+    print(f'format          : {row.format}')
+    print(f'discogs_id      : {row.discogs_id}')
+    if row.release_date:
+        # print(f'release_date    : {row.release_date}')
+        print(f'release_date    : {parse_and_humanize_date(row.release_date)}')
+
+
 def output_row(row):
     if row.release_date:
         delta = humanize_date_delta(row.release_date)
@@ -1046,6 +1214,37 @@ def db_formatted_row(discogs_id):
     return ' '.join(output)
 
 
+def on_this_day_v2(today_str='', config=None):
+
+    with db_ops() as cur:
+
+        cur.execute("""
+            SELECT *
+            FROM discogs_releases
+            WHERE release_date IS NOT NULL
+            ORDER BY artist, release_date, title, discogs_id
+        """)
+
+        rows = cur.fetchall()
+
+        # print(f'{len(rows)} rows')
+
+        for row in rows:
+
+            if row.release_date and len(row.release_date) == 10:
+                if today_str:
+                    if not is_today_anniversary(row.release_date, today_str):
+                        continue
+
+                else:
+                    if not is_today_anniversary(row.release_date):
+                        continue
+
+                print()
+                output_row_v2(row)
+                print()
+
+
 def on_this_day(today_str='', config=None):
 
     with db_ops() as cur:
@@ -1098,13 +1297,13 @@ def main(config):
             scrape_discogs(config=config)
 
         elif args.match:
-            match(config=config)
+            match_v2(config=config)
 
         elif args.random:
             random_selection(config=config)
 
         elif args.onthisday:
-            on_this_day(config=config)
+            on_this_day_v2(config=config)
 
         elif args.status:
             status(config=config)
