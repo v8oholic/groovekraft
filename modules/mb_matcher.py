@@ -4,19 +4,15 @@
 
 import logging
 
-import modules.db_discogs as db_discogs
-import modules.db_musicbrainz as db_musicbrainz
-
-from .utils import earliest_date, sanitise_identifier
-from .db import db_summarise_row, fetch_discogs_release_rows
-from .db import db_ops
-from .utils import convert_country_from_discogs_to_musicbrainz, sanitise_compare_string
+from modules import db_discogs
+from modules import db_musicbrainz
+from modules import db
+from modules import utils
 import musicbrainzngs
 from discogs_client.exceptions import HTTPError
 from musicbrainzngs import musicbrainz
 import sys
 from rapidfuzz import fuzz
-from .utils import convert_format, sanitise_identifier, trim_if_ends_with_number_in_brackets
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +53,7 @@ def score_stars(score):
 
 
 def mb_normalize_artist(name):
-    artist = trim_if_ends_with_number_in_brackets(name)
+    artist = utils.trim_if_ends_with_number_in_brackets(name)
     if artist == 'Various':
         artist = 'Various Artists'
     return artist
@@ -288,7 +284,7 @@ def convert_format(discogs_format):
 
 
 def mb_normalize_country(country):
-    return convert_country_from_discogs_to_musicbrainz(country)
+    return utils.convert_country_from_discogs_to_musicbrainz(country)
 
 
 def mb_normalize_barcodes(barcodes):
@@ -506,8 +502,8 @@ def fuzzy_match(str1, str2):
     if not str1 and not str2:
         return PERFECT_SCORE
 
-    str1 = sanitise_compare_string(str1)
-    str2 = sanitise_compare_string(str2)
+    str1 = utils.sanitise_compare_string(str1)
+    str2 = utils.sanitise_compare_string(str2)
 
     if str1 == str2:
         return PERFECT_SCORE
@@ -1313,7 +1309,7 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
         # nothing further can be done with this release at this time, but certain fields
         # should be unset if present
         # TODO more columns? delete row? unset matched at, for example
-        with db_ops() as cur:
+        with db.db_ops() as cur:
             cur.execute("""
                 UPDATE mb_matches
                 SET mbid = ?, artist = ?, title = ?
@@ -1373,7 +1369,8 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
     primary_type = mb_release_group.get('primary-type')
     format = mb_get_format(mb_release=mb_release)
 
-    release_date = earliest_date(mb_release.get('date'), mb_release_group['first-release-date'])
+    release_date = utils.earliest_date(mb_release.get(
+        'date'), mb_release_group['first-release-date'])
 
     row = db_musicbrainz.fetch_row(discogs_id)
     if row:
@@ -1425,11 +1422,11 @@ def match_discogs_against_mb(config=None):
 
     # match_release_in_musicbrainz(1897847)
 
-    rows = fetch_discogs_release_rows()
+    rows = db_discogs.fetch_discogs_release_rows()
 
     for index, row in enumerate(rows):
 
-        print(f'⚙️ {index+1}/{len(rows)} {db_summarise_row(row.discogs_id)}')
+        print(f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)}')
 
         match_release_in_musicbrainz(row.discogs_id)
 
@@ -1550,13 +1547,13 @@ def mb_match_catno(mb_release, catno):
 
         label_catno = x.get('catalog-number')
         if label_catno:
-            label_catnos.append(sanitise_identifier(label_catno))
+            label_catnos.append(utils.sanitise_identifier(label_catno))
 
     catno_list = list(set(catno))
     catno_list_str = ','.join(catno_list)
 
     for full_catno in catno_list:
-        catnostring = sanitise_identifier(full_catno)
+        catnostring = utils.sanitise_identifier(full_catno)
 
         for label_catno in label_catnos:
             if catnostring == label_catno:

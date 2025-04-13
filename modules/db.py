@@ -87,15 +87,6 @@ def initialize_db(db_path=DB_PATH):
     conn.close()
 
 
-def fetch_discogs_release_rows():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM discogs_releases")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
-
-
 @contextmanager
 def db_ops(db_path=DB_PATH, read_only=False):
     """Wrapper to take care of committing and closing a database
@@ -151,15 +142,6 @@ def fetch_row_by_mb_id(mb_id, config):
 
     with db_ops(config) as cur:
         cur.execute('SELECT * FROM items WHERE mb_id = ?', (mb_id,))
-        row = cur.fetchone()
-
-    return row
-
-
-def fetch_row_by_discogs_id(discogs_id):
-
-    with db_ops() as cur:
-        cur.execute('SELECT * FROM items WHERE release_id = ?', (discogs_id,))
         row = cur.fetchone()
 
     return row

@@ -4,9 +4,8 @@
 import discogs_client
 from discogs_client.exceptions import HTTPError
 
-import modules.db_discogs as db_discogs
-
-from .utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name, earliest_date
+from modules import db_discogs
+from modules import utils
 
 import logging
 
@@ -75,7 +74,7 @@ def connect_to_discogs(config):
 
 
 def normalize_artist(name):
-    artist = trim_if_ends_with_number_in_brackets(name)
+    artist = utils.trim_if_ends_with_number_in_brackets(name)
     if artist == 'Various':
         artist = 'Various Artists'
     return artist
@@ -90,19 +89,19 @@ def normalize_format(format0):
 
 
 def normalize_country(country):
-    return normalize_country_name(country)
+    return utils.normalize_country_name(country)
 
 
 def normalize_barcodes(identifiers):
     barcodes = []
     for identifier in identifiers:
         if identifier['type'].casefold() == 'barcode':
-            barcodes.append(sanitise_identifier(identifier['value']))
+            barcodes.append(utils.sanitise_identifier(identifier['value']))
     return ', '.join(sorted(set(barcodes)))
 
 
 def normalize_catnos(labels):
-    catnos_set = set([sanitise_identifier(x.data['catno']) for x in labels])
+    catnos_set = set([utils.sanitise_identifier(x.data['catno']) for x in labels])
     return ', '.join(sorted(catnos_set))
 
 
@@ -115,7 +114,7 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
     id = release.id
     output.append(f'Discogs {id}')
 
-    artist = trim_if_ends_with_number_in_brackets(release.artists[0].name)
+    artist = utils.trim_if_ends_with_number_in_brackets(release.artists[0].name)
     if artist:
         output.append(artist)
 
@@ -175,7 +174,7 @@ def import_from_discogs(config=None):
         row = db_discogs.fetch_row(release.id)
 
         if row:
-            release_date = earliest_date(row.release_date, year)
+            release_date = utils.earliest_date(row.release_date, year)
 
             db_discogs.set_artist(release.id, artist)
             db_discogs.set_title(release.id, title)
@@ -202,4 +201,4 @@ def import_from_discogs(config=None):
                 catnos=catnos if catnos else None,
                 master_id=master_id,
                 sort_name=artist,
-                release_date=earliest_date(None, year))
+                release_date=utils.earliest_date(None, year))

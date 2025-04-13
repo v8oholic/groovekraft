@@ -1,9 +1,9 @@
-from modules.db import db_ops, get_connection, row_change
+from modules import db
 
 
 def set_mbid(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute("""
             SELECT mbid
             FROM mb_matches
@@ -16,7 +16,7 @@ def set_mbid(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'mbid', new_value, old_value))
+        print(db.row_change(discogs_id, 'mbid', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
             SET mbid = ?
@@ -25,7 +25,7 @@ def set_mbid(discogs_id, new_value):
 
 def set_artist(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute(f"""
             SELECT artist
             FROM mb_matches
@@ -38,7 +38,7 @@ def set_artist(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'artist', new_value, old_value))
+        print(db.row_change(discogs_id, 'artist', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
             SET artist = ?
@@ -47,7 +47,7 @@ def set_artist(discogs_id, new_value):
 
 def set_title(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute(f"""
             SELECT title
             FROM mb_matches
@@ -60,7 +60,7 @@ def set_title(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'title', new_value, old_value))
+        print(db.row_change(discogs_id, 'title', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
             SET title = ?
@@ -69,7 +69,7 @@ def set_title(discogs_id, new_value):
 
 def set_country(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute(f"""
             SELECT country
             FROM mb_matches
@@ -82,7 +82,7 @@ def set_country(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'country', new_value, old_value))
+        print(db.row_change(discogs_id, 'country', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
             SET country = ?
@@ -91,7 +91,7 @@ def set_country(discogs_id, new_value):
 
 def set_format(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute("""
             SELECT format
             FROM mb_matches
@@ -104,7 +104,7 @@ def set_format(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'format', new_value, old_value))
+        print(db.row_change(discogs_id, 'format', new_value, old_value))
 
         cur.execute("""
             UPDATE mb_matches
@@ -114,7 +114,7 @@ def set_format(discogs_id, new_value):
 
 def set_primary_type(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute("""
             SELECT primary_type
             FROM mb_matches
@@ -127,7 +127,7 @@ def set_primary_type(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'primary_type', new_value, old_value))
+        print(db.row_change(discogs_id, 'primary_type', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
             SET primary_type = ?
@@ -136,7 +136,7 @@ def set_primary_type(discogs_id, new_value):
 
 def set_score(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute("""
             SELECT score
             FROM mb_matches
@@ -149,7 +149,7 @@ def set_score(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'score', new_value, old_value))
+        print(db.row_change(discogs_id, 'score', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
             SET score = ?
@@ -158,7 +158,7 @@ def set_score(discogs_id, new_value):
 
 def set_release_date(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute("""
             SELECT release_date
             FROM mb_matches
@@ -171,7 +171,7 @@ def set_release_date(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'release_date', new_value, old_value))
+        print(db.row_change(discogs_id, 'release_date', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
             SET release_date = ?
@@ -180,7 +180,7 @@ def set_release_date(discogs_id, new_value):
 
 def set_sort_name(discogs_id, new_value):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute(f"""
             SELECT sort_name
             FROM mb_matches
@@ -193,7 +193,7 @@ def set_sort_name(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(row_change(discogs_id, 'sort_name', new_value, old_value))
+        print(db.row_change(discogs_id, 'sort_name', new_value, old_value))
         cur.execute("""
             UPDATE mb_matches
             SET sort_name = ?
@@ -212,7 +212,7 @@ def insert_row(
         score=None,
         release_date=None):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
         cur.execute("""
             INSERT INTO mb_matches (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score, release_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -220,7 +220,7 @@ def insert_row(
 
 
 def fetch_row(discogs_id):
-    conn = get_connection()
+    conn = db.get_connection()
     cursor = conn.cursor()
     cursor.execute(f"""
         SELECT id, discogs_id, mbid, artist, title, sort_name, country, score

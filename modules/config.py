@@ -7,12 +7,10 @@ APP_VERSION = '0.2'
 
 class AppConfig:
     def __init__(self, args):
-        self.dry_run = args.dry_run
         # self.all_items = args.all_items
         # self.new_items = args.new_items
         # self.reset = args.reset
         self.match = args.match
-        self.release_date = args.release_date
         # self.discogs_id = args.discogs_id
         # self.mbid = args.mbid
 

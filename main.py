@@ -3,9 +3,6 @@
 # CLI entry point
 
 import discogs_client
-from discogs_client.exceptions import HTTPError
-import musicbrainzngs
-from musicbrainzngs import musicbrainz
 import sys
 import argparse
 import signal
@@ -21,20 +18,11 @@ import logging
 import configparser
 
 from modules import db_discogs
-from modules.db_discogs import set_release_date
-from modules.db import db_ops, fetch_row_by_discogs_id, fetch_discogs_release_rows
-from modules.db import initialize_db
-from modules.db import db_summarise_row
-from modules.discogs_importer import import_from_discogs
-from modules.discogs_importer import connect_to_discogs
-from modules.mb_matcher import match_discogs_against_mb
-from modules.db_discogs import fetch_row, set_release_date
+from modules import utils
+from modules import mb_matcher
+from modules import discogs_importer
+from modules import db
 from modules.config import AppConfig
-from modules.utils import earliest_date
-from modules.utils import parse_and_humanize_date
-from modules.utils import humanize_date_delta
-from modules.utils import is_today_anniversary
-
 
 logger = logging.getLogger(__name__)
 
@@ -97,15 +85,16 @@ def scrape_row(discogs_client, discogs_id=0):
         finally:
 
             # only use the date if it's earlier than the existing one
-            release_date = earliest_date(row.release_date, release_date_str)
+            release_date = utils.earliest_date(row.release_date, release_date_str)
             db_discogs.set_release_date(row.discogs_id, release_date)
 
 
 def scrape_discogs(config):
 
-    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
+    discogs_client, discogs_access_token, discogs_access_secret = discogs_importer.connect_to_discogs(
+        config)
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
 
         cur.execute("""
             SELECT *
@@ -118,7 +107,7 @@ def scrape_discogs(config):
         print(f'{len(rows)} rows')
 
         for idx, row in enumerate(rows):
-            print(f'scrape {db_summarise_row(row.discogs_id)}')
+            print(f'scrape {db.db_summarise_row(row.discogs_id)}')
             scrape_row(discogs_client=discogs_client, discogs_id=row.discogs_id)
 
 
@@ -232,11 +221,11 @@ def fls(data_str, length):
         return data_str.ljust(length)
 
 
-def match(config=None):
+def match(config):
 
     set_date = None
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
 
         cur.execute(f"""
             SELECT *
@@ -251,90 +240,6 @@ def match(config=None):
         if len(rows) == 0:
             print('no matching items')
             return
-
-        if config.release_date:
-
-            if len(config.release_date) > 10:
-                # try day, month and year match first
-                formats = ['%-d %b %Y']
-                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
-                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['day', 'month', 'year']}
-                date_object = dateparser.parse(
-                    config.release_date, date_formats=formats, settings=settings)
-
-                if date_object:
-                    set_date = date_object.strftime('%Y-%m-%d')
-
-            elif len(config.release_date) == 10:
-                # try day, month and year match first
-                formats = ["%Y-%m-%d", '%-d %B %Y']
-                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
-                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['day', 'month', 'year']}
-                date_object = dateparser.parse(
-                    config.release_date, date_formats=formats, settings=settings)
-
-                if date_object:
-                    set_date = date_object.strftime('%Y-%m-%d')
-
-            if len(config.release_date) == 8:
-                # try month and year
-                formats = ["'b %Y"]
-                settings = {'PREFER_DAY_OF_MONTH': 'first', 'REQUIRE_PARTS': ['month', 'year']}
-                # settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
-                #             'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['month', 'year']}
-
-                date_object = dateparser.parse(
-                    config.release_date, date_formats=formats, settings=settings)
-
-                if date_object:
-                    set_date = date_object.strftime("%Y-%m")
-
-            if len(config.release_date) == 7:
-                # try month and year
-                formats = ["%Y-%m"]
-                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
-                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['month', 'year']}
-
-                date_object = dateparser.parse(
-                    config.release_date, date_formats=formats, settings=settings)
-
-                if date_object:
-                    set_date = date_object.strftime("%Y-%m")
-
-            if len(config.release_date) == 4:
-                # try for just a year
-                formats = ["%Y"]
-                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
-                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['year']}
-
-                date_object = dateparser.parse(
-                    config.release_date, date_formats=formats, settings=settings)
-
-                if date_object:
-                    set_date = date_object.strftime("%Y")
-
-            if not set_date:
-                print(f'invalid date {config.release_date}')
-                return
-
-        if set_date:
-            if set_date and len(rows) > 1:
-                print('more than one item matched, release date not set')
-                return
-            else:
-                cur.execute(f"""
-                    SELECT *
-                    FROM discogs_releases
-                    WHERE artist LIKE '%{config.match}%'
-                    OR title LIKE '%{config.match}%'
-                    OR sort_name LIKE '%{config.match}%'
-                    ORDER BY artist, release_date, title, discogs_id
-                """)
-
-                row = cur.fetchone()
-
-                set_release_date(row.discogs_id, set_date, row.release_date, config)
-                return
 
         max_title_len = 45
 
@@ -362,9 +267,6 @@ def match(config=None):
                 format = row.format if row.format else ''
                 release_date = row.release_date if row.release_date else ''
 
-                if config.release_date:
-                    delta = humanize_date_delta(row.release_date)
-
                 if p == 0:
                     artist_len = max(artist_len, len(artist))
                     title_len = max(title_len, len(title))
@@ -390,7 +292,8 @@ def status(config):
     def output_nvp(label, value):
         print(f'{fls(label, 45)}: {value}')
 
-    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
+    discogs_client, discogs_access_token, discogs_access_secret = discogs_importer.connect_to_discogs(
+        config)
 
     # fetch the identity object for the current logged in user.
     discogs_user = discogs_client.identity()
@@ -402,7 +305,7 @@ def status(config):
 
     output_nvp('releases on Discogs', len(folder.releases))
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
 
         cur.execute("""
             SELECT COUNT(*) as count
@@ -460,7 +363,7 @@ def status(config):
 
 def random_selection():
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
 
         cur.execute("""
             SELECT *
@@ -480,7 +383,7 @@ def random_selection():
 
 def output_row(row):
     if row.release_date:
-        delta = humanize_date_delta(row.release_date)
+        delta = utils.humanize_date_delta(row.release_date)
 
     print(f'released        : {delta}')
     print(f'artist          : {row.artist}')
@@ -489,12 +392,12 @@ def output_row(row):
     print(f'discogs_id      : {row.discogs_id}')
     if row.release_date:
         # print(f'release_date    : {row.release_date}')
-        print(f'release_date    : {parse_and_humanize_date(row.release_date)}')
+        print(f'release_date    : {utils.parse_and_humanize_date(row.release_date)}')
 
 
 def on_this_day(today_str='', config=None):
 
-    with db_ops() as cur:
+    with db.db_ops() as cur:
 
         cur.execute("""
             SELECT *
@@ -511,11 +414,11 @@ def on_this_day(today_str='', config=None):
 
             if row.release_date and len(row.release_date) == 10:
                 if today_str:
-                    if not is_today_anniversary(row.release_date, today_str):
+                    if not utils.is_today_anniversary(row.release_date, today_str):
                         continue
 
                 else:
-                    if not is_today_anniversary(row.release_date):
+                    if not utils.is_today_anniversary(row.release_date):
                         continue
 
                 print()
@@ -525,36 +428,36 @@ def on_this_day(today_str='', config=None):
 
 def import_old_release_dates(config=None):
 
-    rows = fetch_discogs_release_rows()
+    rows = db_discogs.fetch_discogs_release_rows()
 
     for index, row in enumerate(rows):
 
-        print(f'⚙️ {index+1}/{len(rows)} {db_summarise_row(row.discogs_id)}')
+        print(f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)}')
 
         # fetch the old row
-        old_item = fetch_row_by_discogs_id(row.discogs_id)
+        old_item = db_discogs.fetch_row_by_discogs_id(row.discogs_id)
         if old_item:
             # release_date = earliest_date(old_item.release_date, row.release_date)
             # set_release_date(row.discogs_id, release_date)
 
-            set_release_date(row.discogs_id, old_item.release_date, True)
+            db_discogs.set_release_date(row.discogs_id, old_item.release_date, True)
 
 
 def main(config):
 
-    initialize_db()
+    db.initialize_db()
 
     # discogs_id = 5084926
     # update_table(discogs_id=2635834)
     # return
 
     if args.import_items:
-        import_from_discogs(config=config)
-        match_discogs_against_mb(config=config)
+        discogs_importer.import_from_discogs(config=config)
+        mb_matcher.match_discogs_against_mb(config=config)
         import_old_release_dates(config=config)
 
     elif args.update_items:
-        match_discogs_against_mb(config=config)
+        mb_matcher.match_discogs_against_mb(config=config)
 
     elif args.scrape:
         # scrape_discogs(config)
@@ -600,12 +503,6 @@ if __name__ == "__main__":
     # scope_group.add_argument('--discogs_id', required=False, help='restrict init or update to a specific Discogs id')
     # scope_group.add_argument('--mbid', required=False, help='restrict init or update to a specific MusicBrainz id')
 
-    parser.add_argument('--date', required=False, dest='release_date', help='set release date')
-
-    id_group = parser.add_mutually_exclusive_group(required=False)
-    id_group.add_argument('--reset', required=False, action='store_true', help='reset version number to force full update')
-
-    parser.add_argument('--dry-run', '--read-only', required=False, action="store_true", help='dry run to test filtering')
     parser.add_argument("--database", type=str, help="Path to the SQLite database file")
     parser.add_argument('--verbose', required=False, action='store_true', help='verbose messages')
     # autopep8: on
