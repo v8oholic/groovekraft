@@ -215,20 +215,30 @@ def earliest_date(dt1_str, dt2_str):
         considered earlier than 1982-05
     """
 
-    if dt1_str and not isinstance(dt1_str, str):
+    if not dt1_str:
+        dt1_str = None
+    if not dt2_str:
+        dt2_str = None
+
+    if dt1_str == '0' or dt1_str == 'None':
+        dt1_str = None
+    if dt2_str == '0' or dt2_str == 'None':
+        dt2_str = None
+
+    if dt1_str and isinstance(dt1_str, int):
         dt1_str = str(dt1_str)
 
-    if dt2_str and not isinstance(dt2_str, str):
+    if dt2_str and isinstance(dt2_str, int):
         dt2_str = str(dt2_str)
 
     if dt1_str == dt2_str:
-        return dt1_str
+        return dt1_str if dt1_str else None
 
     dt1_obj = parse_date(dt1_str) if dt1_str else None
     dt2_obj = parse_date(dt2_str) if dt2_str else None
 
     if dt1_obj is None and dt2_obj is None:
-        return
+        return None
 
     if dt1_obj is not None and dt2_obj is None:
         return dt1_str

@@ -4,8 +4,7 @@
 import discogs_client
 from discogs_client.exceptions import HTTPError
 
-from .db import update_discogs_artist, update_discogs_barcodes, update_discogs_format, update_discogs_catnos, update_discogs_country, update_discogs_title, update_discogs_master_id
-from .db import fetch_discogs_release, insert_row, update_discogs_release_date, update_discogs_year, update_discogs_sort_name
+import modules.db_discogs as db_discogs
 
 from .utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name, earliest_date
 
@@ -173,32 +172,34 @@ def import_from_discogs_v2(config=None):
         year = release.year if release.year else None
         master_id = release.master.id if release.master is not None else 0
 
-        row = fetch_discogs_release(release.id)
+        row = db_discogs.fetch_row(release.id)
 
         if row:
             release_date = earliest_date(row.release_date, year)
 
-            update_discogs_artist(release.id, artist)
-            update_discogs_title(release.id, title)
-            update_discogs_format(release.id, format)
-            update_discogs_country(release.id, country)
-            update_discogs_barcodes(release.id, barcodes if barcodes else None)
-            update_discogs_catnos(release.id, catnos if catnos else None)
-            update_discogs_year(release.id, year, row.year)
-            update_discogs_release_date(release.id, release_date, row.release_date)
+            db_discogs.set_artist(release.id, artist)
+            db_discogs.set_title(release.id, title)
+            db_discogs.set_format(release.id, format)
+            db_discogs.set_country(release.id, country)
+            db_discogs.set_barcodes(release.id, barcodes if barcodes else None)
+            db_discogs.set_catnos(release.id, catnos if catnos else None)
+            db_discogs.set_year(release.id, year)
+            db_discogs.set_master_id(release.id, master_id)
+            db_discogs.set_release_date(release.id, release_date)
             if not row.sort_name:
-                update_discogs_sort_name(release.id, artist)
+                db_discogs.set_sort_name(release.id, artist)
 
         else:
 
-            insert_row(
+            db_discogs.insert_row(
                 discogs_id=release.id,
                 artist=artist,
                 title=title,
                 format=format,
                 country=country,
-                release_date=release.year,
                 year=year,
                 barcodes=barcodes if barcodes else None,
                 catnos=catnos if catnos else None,
-                master_id=master_id)
+                master_id=master_id,
+                sort_name=artist,
+                release_date=release.year)

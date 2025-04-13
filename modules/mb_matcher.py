@@ -4,11 +4,12 @@
 
 import logging
 
-from .utils import earliest_date, sanitise_identifier, summarise_release
-from .db import db_summarise_row, fetch_discogs_release_rows, insert_mb_matches_row, update_mb_score
-from .db import update_mb_release_date, update_mb_artist, update_mb_mbid, update_mb_sort_name
-from .db import update_mb_primary_type, update_mb_title, update_discogs_release_date, update_discogs_sort_name
-from .db import fetch_musicbrainz_row, db_ops, fetch_discogs_release, update_mb_country, update_mb_format
+import modules.db_discogs as db_discogs
+import modules.db_musicbrainz as db_musicbrainz
+
+from .utils import earliest_date, sanitise_identifier
+from .db import db_summarise_row, fetch_discogs_release_rows
+from .db import db_ops
 from .utils import convert_country_from_discogs_to_musicbrainz, sanitise_compare_string
 import musicbrainzngs
 from discogs_client.exceptions import HTTPError
@@ -1165,7 +1166,7 @@ def mb_find_releases(artist='', title='', catno=None, primary_type=None, country
 
 def match_release_in_musicbrainz(discogs_id):
 
-    row = fetch_discogs_release(discogs_id)
+    row = db_discogs.fetch_row(discogs_id)
     if not row:
         raise Exception('Error loading row')
 
@@ -1176,7 +1177,7 @@ def match_release_in_musicbrainz(discogs_id):
     country = mb_normalize_country(row.country)
     catnos = mb_normalize_catnos(row.catnos)
     barcodes = mb_normalize_barcodes(row.barcodes)
-    x, primary_type, format = mb_normalize_format(row.format)
+    _, primary_type, format = mb_normalize_format(row.format)
 
     candidates = []
 
@@ -1374,36 +1375,34 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
 
     release_date = earliest_date(mb_release.get('date'), mb_release_group['first-release-date'])
 
-    row = fetch_musicbrainz_row(discogs_id)
+    row = db_musicbrainz.fetch_row(discogs_id)
     if row:
         # update any changed items
-        update_mb_mbid(discogs_id, mb_release['id'])
-        update_mb_artist(discogs_id, artist)
-        update_mb_title(discogs_id, title)
-        update_mb_country(discogs_id, country)
-        update_mb_format(discogs_id, format)
-        update_mb_score(discogs_id, best_match_score)
-        update_mb_primary_type(discogs_id, primary_type)
-        update_mb_release_date(discogs_id, release_date)
-        update_mb_sort_name(discogs_id, sort_name)
+        db_musicbrainz.set_mbid(discogs_id, mb_release['id'])
+        db_musicbrainz.set_artist(discogs_id, artist)
+        db_musicbrainz.set_title(discogs_id, title)
+        db_musicbrainz.set_country(discogs_id, country)
+        db_musicbrainz.set_format(discogs_id, format)
+        db_musicbrainz.set_score(discogs_id, best_match_score)
+        db_musicbrainz.set_primary_type(discogs_id, primary_type)
+        db_musicbrainz.set_release_date(discogs_id, release_date)
+        db_musicbrainz.set_sort_name(discogs_id, sort_name)
 
-        update_discogs_release_date(discogs_id, release_date)
-        update_discogs_sort_name(discogs_id, sort_name)
+        db_discogs.set_release_date(discogs_id, release_date)
+        db_discogs.set_sort_name(discogs_id, sort_name)
 
     else:
-        insert_mb_matches_row(
+        db_musicbrainz.insert_row(
             discogs_id=discogs_id,
             mbid=mbid,
             artist=artist,
             title=title,
-            sort_name=sort_name,
             country=country,
             format=format,
             score=best_match_score,
             primary_type=primary_type,
-            release_date=release_date)
-
-    update_discogs_release_date(discogs_id, release_date)
+            release_date=release_date,
+            sort_name=sort_name)
 
 
 def match_discogs_against_mb(config=None):

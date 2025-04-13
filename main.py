@@ -20,10 +20,11 @@ import dateparser
 import logging
 import configparser
 
-from modules.db import db_ops, fetch_discogs_release, update_discogs_artist, update_discogs_barcodes, update_discogs_catnos
-from modules.db import update_discogs_country, update_discogs_format, update_mb_artist, update_discogs_title, update_mb_mbid, update_mb_primary_type, update_mb_title
-from modules.db import update_discogs_release_date, insert_row, update_mb_sort_name, fetch_row_by_mb_id, initialize_db
+from modules.db import db_ops
+from modules.db_musicbrainz import set_primary_type, set_sort_name
+from modules.db import fetch_row_by_mb_id, initialize_db
 from modules.db import db_summarise_row
+from modules.db_musicbrainz import set_artist, set_mbid, set_title
 from modules.discogs_importer import import_from_discogs_v2
 from modules.discogs_importer import connect_to_discogs
 from modules.discogs_importer import discogs_summarise_release
@@ -33,6 +34,7 @@ from modules.mb_matcher import find_match_by_discogs_link
 from modules.mb_matcher import mb_find_release_group_releases
 from modules.mb_matcher import mb_find_releases
 from modules.mb_matcher import mb_summarise_release
+from modules.db_discogs import fetch_row, insert_row, set_artist, set_barcodes, set_catnos, set_country, set_format, set_release_date, set_title
 from modules.utils import convert_country_from_discogs_to_musicbrainz
 from modules.config import AppConfig
 from modules.utils import convert_format
@@ -226,7 +228,7 @@ if False:
 def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
 
     if row is None and discogs_id:
-        fetch_discogs_release(discogs_id)
+        fetch_row(discogs_id)
 
     if row is not None and discogs_id == 0:
         discogs_id = row.release_id
@@ -282,7 +284,7 @@ def scrape_row(discogs_client, discogs_release=None, row=None, discogs_id=0):
 
             # only use the date if it's earlier than the existing one
             release_date = earliest_date(row.release_date, release_date_str)
-            update_discogs_release_date(row.release_id, release_date, config)
+            set_release_date(row.release_id, release_date, config)
 
 
 def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None, version_id=0, config=None):
@@ -423,20 +425,20 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         print(f'❌ no match for {discogs_summarise_release(release=discogs_release)}')
         version_id = 0
 
-    row = fetch_discogs_release(discogs_id)
+    row = fetch_row(discogs_id)
     if row:
         # update any changed fields in the minimal part of the row
         if not release_date:
             release_date = earliest_date(row.release_date, discogs_release.year)
 
-        update_discogs_artist(discogs_release.id, artist_name, row.artist, config=config)
-        update_discogs_title(discogs_release.id, release_title, row.title, config=config)
-        update_discogs_format(discogs_release.id, format, row.format, config=config)
-        update_mb_primary_type(discogs_release.id, mb_primary_type,
-                               row.mb_primary_type, config=config)
-        update_discogs_country(discogs_release.id, mb_country, row.country, config=config)
-        update_discogs_release_date(discogs_release.id, release_date,
-                                    row.release_date, config=config)
+        set_artist(discogs_release.id, artist_name, row.artist, config=config)
+        set_title(discogs_release.id, release_title, row.title, config=config)
+        set_format(discogs_release.id, format, row.format, config=config)
+        set_primary_type(discogs_release.id, mb_primary_type,
+                         row.mb_primary_type, config=config)
+        set_country(discogs_release.id, mb_country, row.country, config=config)
+        set_release_date(discogs_release.id, release_date,
+                         row.release_date, config=config)
 
     else:
 
@@ -453,7 +455,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
                    version_id=version_id,
                    config=config)
 
-        row = fetch_discogs_release(discogs_id)
+        row = fetch_row(discogs_id)
 
     # at this point a number of scenarios are possible:
     #   we definitely have a discogs release
@@ -469,9 +471,9 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
         mb_artist = None
         mb_title = None
 
-        update_mb_mbid(row.release_id, mb_id, row.mb_id, config=config)
-        update_mb_artist(row.release_id, mb_artist, row.mb_artist, config=config)
-        update_mb_title(row.release_id, mb_title, row.mb_title, config=config)
+        set_mbid(row.release_id, mb_id, row.mb_id, config=config)
+        set_artist(row.release_id, mb_artist, row.mb_artist, config=config)
+        set_title(row.release_id, mb_title, row.mb_title, config=config)
 
         return
 
@@ -491,7 +493,7 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
                     release_date, mb_release_group.get('first-release-date'))
 
     # row already exists, just update any out of date or missing items
-    row = fetch_discogs_release(discogs_id)
+    row = fetch_row(discogs_id)
 
     release_id = row.release_id
 
@@ -505,14 +507,14 @@ def update_row(discogs_client, discogs_release=None, discogs_id=None, mb_id=None
     if not mb_sort_name:
         mb_sort_name = mb_artist
 
-    update_mb_mbid(release_id, mb_id, row.mb_id, config=config)
-    update_mb_artist(release_id, mb_artist, row.mb_artist, config=config)
-    update_mb_title(release_id, mb_title, row.mb_title, config=config)
-    update_mb_sort_name(release_id, mb_sort_name, row.sort_name, config=config)
-    update_discogs_release_date(release_id, release_date, row.release_date, config=config)
-    update_discogs_format(discogs_release.id, format, row.format, config=config)
-    update_mb_primary_type(discogs_release.id, mb_primary_type,
-                           row.mb_primary_type, config=config)
+    set_mbid(release_id, mb_id, row.mb_id, config=config)
+    set_artist(release_id, mb_artist, row.mb_artist, config=config)
+    set_title(release_id, mb_title, row.mb_title, config=config)
+    set_sort_name(release_id, mb_sort_name, row.sort_name, config=config)
+    set_release_date(release_id, release_date, row.release_date, config=config)
+    set_format(discogs_release.id, format, row.format, config=config)
+    set_primary_type(discogs_release.id, mb_primary_type,
+                     row.mb_primary_type, config=config)
 
 
 def import_from_discogs(config=None):
@@ -570,7 +572,7 @@ def import_from_discogs(config=None):
                        discogs_release=discogs_item.release, version_id=max_version_id)
             return
 
-        row = fetch_discogs_release(config.discogs_id)
+        row = fetch_row(config.discogs_id)
         if row is not None:
             print(f'⏭️ {db_summarise_row(row=row)}')
             return
@@ -590,7 +592,7 @@ def import_from_discogs(config=None):
                            discogs_release=discogs_item.release, version_id=max_version_id)
                 continue
 
-            row = fetch_discogs_release(discogs_item.id)
+            row = fetch_row(discogs_item.id)
             if row is not None:
                 print(f'⏭️ {db_summarise_row(row=row)}')
                 continue
@@ -711,7 +713,7 @@ def match(config=None):
 
                 row = cur.fetchone()
 
-                update_discogs_release_date(row.release_id, set_date, row.release_date, config)
+                set_release_date(row.release_id, set_date, row.release_date, config)
                 return
 
         max_title_len = 45
@@ -865,7 +867,7 @@ def match_v2(config=None):
 
                 row = cur.fetchone()
 
-                update_discogs_release_date(row.discogs_id, set_date, row.release_date, config)
+                set_release_date(row.discogs_id, set_date, row.release_date, config)
                 return
 
         max_title_len = 45
@@ -1117,7 +1119,7 @@ def update_table(config=None):
             min_version_id = row.min_version_id if row.min_version_id else 0
 
     if config.discogs_id:
-        row = fetch_discogs_release(config.discogs_id)
+        row = fetch_row(config.discogs_id)
         if row is not None:
             update_row(discogs_client, discogs_id=int(config.discogs_id),
                        version_id=max_version_id, config=config)
@@ -1156,7 +1158,7 @@ def scrape_discogs(discogs_id, mb_id=None, config=None):
     discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
 
     if discogs_id:
-        row = fetch_discogs_release(discogs_id)
+        row = fetch_row(discogs_id)
         if row is not None:
             print(f'update {db_summarise_row(row=row)}')
             scrape_row(discogs_client=discogs_client, row=row, discogs_id=int(discogs_id))
@@ -1184,7 +1186,7 @@ def scrape_discogs(discogs_id, mb_id=None, config=None):
 
 
 def db_formatted_row(discogs_id):
-    row = fetch_discogs_release(discogs_id)
+    row = fetch_row(discogs_id)
 
     output = []
 
