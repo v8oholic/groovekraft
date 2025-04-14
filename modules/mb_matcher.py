@@ -33,13 +33,15 @@ MAXIMUM_SCORE = SCORE_WEIGHTS['artist'] + SCORE_WEIGHTS['title'] + SCORE_WEIGHTS
     SCORE_WEIGHTS['format']+SCORE_WEIGHTS['barcode']+SCORE_WEIGHTS['catno']
 
 PERFECT_SCORE = 100
-MINIMUM_SCORE = 50
+MINIMUM_SCORE = 40
+MINIMUM_ARTIST_SCORE = 30
+MINIMUM_TITLE_SCORE = 50
 
 
 def score_stars(score):
 
     # SCORE_STARS = [(0, '🔴'), (25, '🟠'), (50, '🟡'), (75, '🟢'), (100, '🔵')]
-    SCORE_STARS = [(0, '🔴'), (50, '🟠'), (75, '🟡'), (100, '🟢')]
+    SCORE_STARS = [(0, '🔴'), (40, '🟠'), (70, '🟡'), (100, '🟢')]
 
     stars = ''
 
@@ -460,6 +462,14 @@ def disambiguator_score(
         else:
             raise Exception("Unable to load MusicBrainz release")
 
+    print(summarise(
+        artist=artist,
+        title=title,
+        country=country,
+        format=format,
+        catnos=catnos,
+        barcodes=barcodes))
+
     artist_score = 0
     title_score = 0
     country_score = 0
@@ -471,31 +481,44 @@ def disambiguator_score(
     mb_title = mb_release.get('title')
     mb_country = mb_release.get('country')
     mb_format = mb_get_format(mb_release=mb_release)
+    if mb_format in ['12" Vinyl', '7" Vinyl']:
+        mb_format = 'Vinyl'
     mb_barcode = mb_release.get('barcode')
+    if mb_barcode:
+        mb_barcode = [mb_barcode]
+    else:
+        mb_barcode = None
     mb_catnos = []
     for label_info in mb_release.get('label-info-list'):
         find_catno = label_info.get('catalog-number')
-        mb_catnos.append(find_catno)
+        if find_catno:
+            mb_catnos.append(utils.sanitise_identifier(find_catno))
     mb_catnos = list(set(mb_catnos))
 
-    artist_score = fuzzy_match(artist, mb_artist) * SCORE_WEIGHTS['artist'] / 100
-    title_score = fuzzy_match(title, mb_title) * SCORE_WEIGHTS['title'] / 100
+    artist_score = fuzzy_match(artist, mb_artist, 'artist') * SCORE_WEIGHTS['artist'] / 100
+    if artist_score < MINIMUM_ARTIST_SCORE:
+        return 0
+
+    title_score = fuzzy_match(title, mb_title, 'title') * SCORE_WEIGHTS['title'] / 100
+    if title_score < MINIMUM_TITLE_SCORE:
+        return 0
+
     if country == mb_country:
         country_score = SCORE_WEIGHTS['country']
-    format_score = fuzzy_match(format, mb_format) * SCORE_WEIGHTS['format'] / 100
+    format_score = fuzzy_match(format, mb_format, 'format') * SCORE_WEIGHTS['format'] / 100
     barcode_score = barcode_match_scorer(barcodes, mb_barcode)
     catno_score = catno_match_scorer(catnos, mb_catnos)
 
     total_points = artist_score+title_score+country_score+format_score+catno_score+barcode_score
 
+    # x = summarise(artist=mb_artist, title=mb_title, country=mb_country,
+    #               format=mb_format, catnos=mb_catnos, barcodes=mb_barcode)
+    # print(f'{x} {total_points} points {round(100 * total_points/MAXIMUM_SCORE)}%')
+
     return round(100 * total_points/MAXIMUM_SCORE)
 
 
-test_str1 = []
-test_str2 = []
-
-
-def fuzzy_match(str1, str2):
+def fuzzy_match(str1, str2, desc=''):
     global test_str1
     global test_str2
 
@@ -506,29 +529,20 @@ def fuzzy_match(str1, str2):
     str2 = utils.sanitise_compare_string(str2)
 
     if str1 == str2:
+        ratio = PERFECT_SCORE
+        # print(f'match status for {desc}: "{str1}" "{str2}" {ratio}%')
         return PERFECT_SCORE
 
-    new_compare = False
-    if str1 not in test_str1:
-        test_str1.append(str1)
-        new_compare = True
+    # simple = round(fuzz.ratio(str1, str2), 1)
+    # partial = round(fuzz.partial_ratio(str1, str2), 1)
+    # weighted = round(fuzz.WRatio(str1, str2), 1)
+    quick = round(fuzz.QRatio(str1, str2), 1)
 
-    if str2 not in test_str2:
-        test_str2.append(str2)
-        new_compare = True
+    # print(f'{desc} "{str1}" "{str2}" simple {simple} partial {partial} weighted {weighted} quick {quick}')
 
-    if new_compare:
-        simple = round(fuzz.ratio(str1, str2), 1)
-        partial = round(fuzz.partial_ratio(str1, str2), 1)
-        token_sort = round(fuzz.token_sort_ratio(str1, str2), 1)
-        token_set = round(fuzz.token_set_ratio(str1, str2), 1)
-        weighted = round(fuzz.WRatio(str1, str2), 1)
-        quick = round(fuzz.QRatio(str1, str2), 1)
-
-        print(f'{str1} {str2} simple {simple} partial {partial} weighted {weighted} quick {quick}')
-        return quick
-
-    return round(fuzz.QRatio(str1, str2), 1)
+    ratio = quick
+    # print(f'match status for {desc}: "{str1}" "{str2}" {ratio}')
+    return ratio
 
 
 def mb_browse_release_groups_by_discogs_master_link(discogs_master_id=0):
@@ -1282,7 +1296,13 @@ def disambiguate_releases(
 
     for release in candidates:
         disambiguation_score = disambiguator_score(
-            artist=artist, title=title, country=country, format=format, catnos=catnos, barcodes=barcodes, mb_release=release)
+            artist=artist,
+            title=title,
+            country=country,
+            format=format,
+            catnos=catnos,
+            barcodes=barcodes,
+            mb_release=release)
 
         if disambiguation_score > best_match_score:
             best_match_score = disambiguation_score
@@ -1362,7 +1382,7 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
     format = mb_get_format(mb_release=mb_release)
 
     release_date = utils.earliest_date(mb_release.get(
-        'date'), mb_release_group['first-release-date'])
+        'date'), mb_release_group.get('first-release-date'))
 
     row = db_musicbrainz.fetch_row(discogs_id)
     if row:
@@ -1422,7 +1442,8 @@ def match_discogs_against_mb(config=None):
         rows = db_discogs.fetch_discogs_release_rows()
 
     for index, row in enumerate(rows):
-        print(f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)}')
+        if config.verbose:
+            print(f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)}')
         match_release_in_musicbrainz(row.discogs_id)
 
 

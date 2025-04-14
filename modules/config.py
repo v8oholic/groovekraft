@@ -18,6 +18,8 @@ class AppConfig:
         self.id = args.id
         self.unmatched = args.unmatched
 
+        self.verbose = args.verbose
+
         self.database_name = args.database or "local.db"
         self.user_agent = 'v8oholic_collection_application/1.0'
         self.consumer_key = None
