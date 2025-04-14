@@ -278,6 +278,7 @@ def match(config):
                     #     f'{row.release_id:>8} {fls(artist, artist_len)} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
                     if artist != last_artist:
                         last_artist = artist
+                        print()
                         print(artist)
                         print('='*len(artist))
 
