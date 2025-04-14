@@ -10,8 +10,12 @@ class AppConfig:
         # self.all_items = args.all_items
         # self.new_items = args.new_items
         # self.reset = args.reset
+        self.missing = args.missing
         self.match = args.match
-        # self.discogs_id = args.discogs_id
+        self.find = args.find
+
+        self.begin = args.begin
+        self.id = args.id
         # self.mbid = args.mbid
 
         self.database_name = args.database or "local.db"

@@ -1420,14 +1420,15 @@ def match_discogs_against_mb(config=None):
 
     musicbrainzngs.set_rate_limit(1, 1)
 
-    # match_release_in_musicbrainz(1897847)
-
-    rows = db_discogs.fetch_discogs_release_rows()
+    if config.id:
+        rows = db_discogs.fetch_discogs_release_rows(f'WHERE discogs_id = {config.id}')
+    elif config.begin:
+        rows = db_discogs.fetch_discogs_release_rows(f'WHERE discogs_id >= {config.begin}')
+    else:
+        rows = db_discogs.fetch_discogs_release_rows()
 
     for index, row in enumerate(rows):
-
         print(f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)}')
-
         match_release_in_musicbrainz(row.discogs_id)
 
 

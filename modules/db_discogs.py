@@ -195,7 +195,7 @@ def set_release_date(discogs_id, new_value, force=False):
 
         if not force:
 
-            if old_value is not None and len(new_value) < len(old_value):
+            if old_value is not None and (new_value is None or len(new_value) < len(old_value)):
                 print(db.row_ignore_change(discogs_id, 'release_date', new_value, old_value, "shorter"))
                 return
 
@@ -265,10 +265,16 @@ def fetch_row(discogs_id):
     return row
 
 
-def fetch_discogs_release_rows():
+def fetch_discogs_release_rows(where=None):
     conn = db.get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM discogs_releases")
+
+    query = []
+    query.append("SELECT * FROM discogs_releases")
+    if where:
+        query.append(where)
+    query.append('ORDER BY discogs_id')
+    cursor.execute(' '.join(query))
     rows = cursor.fetchall()
     conn.close()
     return rows

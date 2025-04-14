@@ -221,6 +221,87 @@ def fls(data_str, length):
         return data_str.ljust(length)
 
 
+def missing(config):
+
+    with db.context_manager() as cur:
+
+        # LEFT JOIN mb_matches m ON d.discogs_id = m.discogs_id
+
+        # construct query
+        query = []
+
+        find_string = config.find
+
+        query.append('SELECT d.artist, d.title, d.format, d.release_date, d.discogs_id')
+        query.append('FROM discogs_releases d')
+        query.append('LEFT JOIN mb_matches m USING(discogs_id)')
+        query.append('WHERE m.mbid IS NULL')
+        if find_string:
+            query.append(f'AND (d.artist LIKE "%{find_string}%"')
+            query.append(f'OR d.title LIKE "%{find_string}%"')
+            query.append(f'OR d.sort_name LIKE "%{find_string}%")')
+        query.append('ORDER BY d.artist, d.release_date, d.title, d.discogs_id')
+
+        query_string = ' '.join(query)
+
+        cur.execute(query_string)
+
+        rows = cur.fetchall()
+        if len(rows) == 0:
+            print('no matching items')
+            return
+
+        max_title_len = 45
+
+        artist_len = 0
+        title_len = 0
+        format_len = 0
+        release_date_len = 0
+
+        for p in range(2):
+            if p == 0:
+                artist_len = 0
+                title_len = 0
+                format_len = 0
+                release_date_len = 0
+
+                last_artist = None
+            else:
+                title_len = min(title_len, max_title_len)
+
+            for row in rows:
+
+                artist = row.artist
+                title = row.title
+
+                format = row.format.split(',')[0] if row.format else ''
+                release_date = row.release_date if row.release_date else ''
+
+                if p == 0:
+                    artist_len = max(artist_len, len(artist))
+                    title_len = max(title_len, len(title))
+
+                    format_len = max(format_len, len(format))
+                    release_date_len = max(release_date_len, len(release_date))
+                else:
+                    # logging.debug(
+                    #     f"{row.release_id:>8} {artist:20} {title:20} {format:10} {release_date:10}")
+                    # logging.debug(
+                    #     f'{row.release_id:>8} {fls(artist, artist_len)} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+                    if artist != last_artist:
+                        last_artist = artist
+                        print()
+                        print(artist)
+                        print('='*len(artist))
+
+                    print(
+                        f'{row.discogs_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+
+        print()
+        print(f'{len(rows)} rows')
+        print()
+
+
 def match(config):
 
     with db.context_manager() as cur:
@@ -262,7 +343,7 @@ def match(config):
                 artist = row.artist
                 title = row.title
 
-                format = row.format if row.format else ''
+                format = row.format.split(',')[0] if row.format else ''
                 release_date = row.release_date if row.release_date else ''
 
                 if p == 0:
@@ -291,6 +372,10 @@ def status(config):
     def output_nvp(label, value):
         print(f'{fls(label, 45)}: {value}')
 
+    def output_nvp_percentage(label, count, total):
+        value = f'{count} ({round(count * 100 / total, 1)}%)'
+        print(f'{fls(label, 45)}: {value}')
+
     discogs_client, discogs_access_token, discogs_access_secret = discogs_importer.connect_to_discogs(
         config)
 
@@ -303,6 +388,7 @@ def status(config):
     folder = discogs_user.collection_folders[0]
 
     output_nvp('releases on Discogs', len(folder.releases))
+    discogs_count = len(folder.releases)
 
     with db.context_manager() as cur:
 
@@ -312,16 +398,32 @@ def status(config):
         """)
         row = cur.fetchone()
 
-        output_nvp('releasees in local database', row.count)
+        localdb_count = row.count
+        output_nvp_percentage('releasees in local database', localdb_count, discogs_count)
 
-        cur.execute("""
-            SELECT COUNT(*) as count
-            FROM mb_matches
-            WHERE mbid IS NOT NULL
-        """)
+        query = []
+
+        query.append('SELECT COUNT(d.discogs_id) as count')
+        query.append('FROM discogs_releases d')
+        query.append('LEFT JOIN mb_matches m USING(discogs_id)')
+        query.append('WHERE m.mbid IS NOT NULL')
+
+        cur.execute(' '.join(query))
         row = cur.fetchone()
 
-        output_nvp('releases matched in MusicBrainz', row.count)
+        output_nvp_percentage('releases matched in MusicBrainz', row.count, localdb_count)
+
+        query = []
+
+        query.append('SELECT COUNT(d.discogs_id) as count')
+        query.append('FROM discogs_releases d')
+        query.append('LEFT JOIN mb_matches m USING(discogs_id)')
+        query.append('WHERE m.mbid IS NULL')
+
+        cur.execute(' '.join(query))
+        row = cur.fetchone()
+
+        output_nvp_percentage('releases not matched in MusicBrainz', row.count, localdb_count)
 
         cur.execute(f"""
             SELECT COUNT(*) as count
@@ -330,7 +432,7 @@ def status(config):
         """)
         row = cur.fetchone()
 
-        output_nvp('releases with no release date', row.count)
+        output_nvp_percentage('no release date', row.count, localdb_count)
 
         cur.execute(f"""
             SELECT COUNT(*) as count
@@ -339,7 +441,7 @@ def status(config):
         """)
         row = cur.fetchone()
 
-        output_nvp('releases with just release year', row.count)
+        output_nvp_percentage('just release year', row.count, localdb_count)
 
         cur.execute(f"""
             SELECT COUNT(*) as count
@@ -348,7 +450,7 @@ def status(config):
         """)
         row = cur.fetchone()
 
-        output_nvp('releases with just release month and year', row.count)
+        output_nvp_percentage('just month and release year', row.count, localdb_count)
 
         cur.execute(f"""
             SELECT COUNT(*) as count
@@ -357,7 +459,7 @@ def status(config):
         """)
         row = cur.fetchone()
 
-        output_nvp('releases with full release date', row.count)
+        output_nvp_percentage('full release date', row.count, localdb_count)
 
 
 def random_selection():
@@ -462,6 +564,9 @@ def main(config):
         # scrape_discogs(config)
         import_old_release_dates(config=config)
 
+    elif args.missing:
+        missing(config=config)
+
     elif args.match:
         match(config=config)
 
@@ -493,10 +598,14 @@ if __name__ == "__main__":
     main_group.add_argument('--scrape', required=False, action='store_true', help='update release dates from Discogs website')
     main_group.add_argument('--onthisday', '--on-this-day', required=False, action='store_true', help='display any release anniversaries')
     main_group.add_argument('--random', required=False, action='store_true', help='generate random selection')
+    main_group.add_argument('--missing', required=False, action='store_true', help='show unmatched releases')
     main_group.add_argument('--match', required=False, help='find matching text in database')
     main_group.add_argument('--status', required=False, action='store_true', help='report status of database')
 
-    # scope_group = parser.add_mutually_exclusive_group(required=False)
+    scope_group = parser.add_mutually_exclusive_group(required=False)
+    scope_group.add_argument('--find', required=False, help='find matching text in database')
+    scope_group.add_argument('--begin', type=int, required=False, default=0, help='begin at discogs_id')
+    scope_group.add_argument('--id', type=int, required=False, default=0, help='only a specific Discogs id')
     # scope_group.add_argument('--new', required=False, action='store_true', dest="new_items", help='new items')
     # scope_group.add_argument('--all', required=False, action='store_true', dest="all_items", help='all items')
     # scope_group.add_argument('--discogs_id', required=False, help='restrict init or update to a specific Discogs id')
