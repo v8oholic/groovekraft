@@ -61,7 +61,7 @@ def set_format(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(utils.row_change(discogs_id, 'format', new_value, old_value))
+        print(db.row_change(discogs_id, 'format', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET format = ?
@@ -83,7 +83,7 @@ def set_country(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(utils.row_change(discogs_id, 'country', new_value, old_value))
+        print(db.row_change(discogs_id, 'country', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET country = ?
@@ -105,7 +105,7 @@ def set_barcodes(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(utils.row_change(discogs_id, 'barcodes', new_value, old_value))
+        print(db.row_change(discogs_id, 'barcodes', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET barcodes = ?
@@ -127,7 +127,7 @@ def set_catnos(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(utils.row_change(discogs_id, 'catnos', new_value, old_value))
+        print(db.row_change(discogs_id, 'catnos', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET catnos = ?
@@ -149,7 +149,7 @@ def set_year(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(utils.row_change(discogs_id, 'year', new_value, old_value))
+        print(db.row_change(discogs_id, 'year', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET year = ?
@@ -171,7 +171,7 @@ def set_master_id(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(utils.row_change(discogs_id, 'master_id', new_value, old_value))
+        print(db.row_change(discogs_id, 'master_id', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET master_id = ?
@@ -226,7 +226,7 @@ def set_sort_name(discogs_id, new_value):
         if old_value == new_value:
             return
 
-        print(utils.row_change(discogs_id, 'sort_name', new_value, old_value))
+        print(db.row_change(discogs_id, 'sort_name', new_value, old_value))
         cur.execute("""
             UPDATE discogs_releases
             SET sort_name = ?
