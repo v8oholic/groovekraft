@@ -280,6 +280,22 @@ def fetch_discogs_release_rows(where=None):
     return rows
 
 
+def fetch_unmatched_discogs_release_rows():
+    conn = db.get_connection()
+    cursor = conn.cursor()
+
+    query = []
+    query.append('SELECT d.*')
+    query.append('FROM discogs_releases d')
+    query.append('LEFT JOIN mb_matches m USING(discogs_id)')
+    query.append('WHERE m.mbid IS NULL')
+    query.append('ORDER BY d.discogs_id')
+    cursor.execute(' '.join(query))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+
 def fetch_row_by_discogs_id(discogs_id):
 
     with db.context_manager() as cur:

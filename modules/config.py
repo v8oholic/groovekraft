@@ -16,7 +16,7 @@ class AppConfig:
 
         self.begin = args.begin
         self.id = args.id
-        # self.mbid = args.mbid
+        self.unmatched = args.unmatched
 
         self.database_name = args.database or "local.db"
         self.user_agent = 'v8oholic_collection_application/1.0'

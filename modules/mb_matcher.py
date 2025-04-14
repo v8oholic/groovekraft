@@ -1175,10 +1175,8 @@ def match_release_in_musicbrainz(discogs_id):
     barcodes = mb_normalize_barcodes(row.barcodes)
     _, primary_type, format = mb_normalize_format(row.format)
 
-    candidates = []
-
     # try the Discogs release link first
-    candidates.extend(mb_browse_releases_by_discogs_release_link(discogs_id=discogs_id))
+    candidates = mb_browse_releases_by_discogs_release_link(discogs_id=discogs_id)
 
     if len(candidates) == 1:
         # special case for a single match
@@ -1201,6 +1199,8 @@ def match_release_in_musicbrainz(discogs_id):
             mb_release_group=mb_release_group,
             best_match_score=PERFECT_SCORE)
         return
+
+    candidates = []
 
     if row.master_id:
         # try the master release to release group link
@@ -1293,11 +1293,6 @@ def disambiguate_releases(
     if best_match_score < MINIMUM_SCORE:
         return None, None, 0
 
-    # if best_match_score == 100:
-    #     print(f'💯 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get('id'))}')
-    # elif best_match_score > 0:
-    #     print(f'📈 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get('id'))}')
-
     mb_release_group, mb_release = get_release_and_release_group(mbid=best_match_release.get('id'))
 
     return mb_release_group, mb_release, best_match_score
@@ -1306,14 +1301,11 @@ def disambiguate_releases(
 def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None, best_match_score=0):
 
     if mb_release is None:
-        # nothing further can be done with this release at this time, but certain fields
-        # should be unset if present
-        # TODO more columns? delete row? unset matched at, for example
+        # nothing further can be done with this release
         with db.context_manager() as cur:
             cur.execute("""
-                UPDATE mb_matches
-                SET mbid = ?, artist = ?, title = ?
-                WHERE discogs_id = ?""", (None, None, None, discogs_id))
+                DELETE FROM mb_matches
+                WHERE discogs_id = ?""", (discogs_id))
 
         return
 
@@ -1424,6 +1416,8 @@ def match_discogs_against_mb(config=None):
         rows = db_discogs.fetch_discogs_release_rows(f'WHERE discogs_id = {config.id}')
     elif config.begin:
         rows = db_discogs.fetch_discogs_release_rows(f'WHERE discogs_id >= {config.begin}')
+    elif config.unmatched:
+        rows = db_discogs.fetch_unmatched_discogs_release_rows()
     else:
         rows = db_discogs.fetch_discogs_release_rows()
 

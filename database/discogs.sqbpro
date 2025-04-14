@@ -5,7 +5,7 @@ ORDER BY artist, title</sql><sql name="SQL 2">SELECT  sort_name, mb_artist, arti
 FROM items
 WHERE sort_name is not null
 ORDER BY sort_name, artist, title, year
-</sql><sql name="SQL 3">SELECT d.artist, d.title, d.format, d.release_date
+</sql><sql name="SQL 3*">SELECT d.artist, d.title, d.discogs_id, d.format, d.release_date
 FROM discogs_releases d
 LEFT JOIN mb_matches m USING(discogs_id)
 WHERE m.mbid IS NULL

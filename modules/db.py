@@ -56,7 +56,7 @@ def initialize_db(db_path=DB_PATH):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS mb_matches (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            discogs_id INTEGER,
+            discogs_id INTEGER UNIQUE,
             mbid TEXT,
             artist TEXT,
             title TEXT,
