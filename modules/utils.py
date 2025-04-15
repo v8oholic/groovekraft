@@ -158,8 +158,30 @@ def convert_format(discogs_format):
 
 
 def sanitise_identifier(catno):
-    catno_string = ''.join(chr for chr in catno if chr.isalnum()).casefold()
+    catno_string = ''.join(chr for chr in catno if chr.isalnum()).casefold() or chr == '-'
     return catno_string
+
+
+def normalize_identifier_list(value):
+    """Normalise a string or list of identifiers into a list.
+
+    Identifiers are barcodes and catalog numbers. A (comma separated) string
+    or a list of strings is converted into a list of normalized values."""
+
+    value_set = []
+
+    if value is None:
+        pass
+
+    elif isinstance(value, str):
+        for tmp in value.split(','):
+            value_set.append(sanitise_identifier(tmp.strip()))
+
+    elif isinstance(value, list) or isinstance(value, set):
+        for tmp in value:
+            value_set.append(sanitise_identifier(tmp.strip()))
+
+    return list(value_set)
 
 
 def trim_if_ends_with_number_in_brackets(s):

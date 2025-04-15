@@ -19,14 +19,14 @@ logger = logging.getLogger(__name__)
 SCORE_WEIGHTS = {
     "artist": 100,
     "title": 100,
-    "country": 100,
+    "country": 50,
     "format": 100,
     "barcode": 100,
-    "unilateral_barcode": 30,
-    "no_barcode": 60,
+    "unilateral_barcode": 0,
+    "no_barcode": 0,
     "catno": 100,
-    "unilateral_catno": 30,
-    "no_catno": 60
+    "unilateral_catno": 0,
+    "no_catno": 0
 }
 
 MAXIMUM_SCORE = SCORE_WEIGHTS['artist'] + SCORE_WEIGHTS['title'] + SCORE_WEIGHTS['country'] + \
@@ -301,120 +301,45 @@ def mb_normalize_country(country):
     return utils.convert_country_from_discogs_to_musicbrainz(country)
 
 
-def mb_normalize_barcodes(barcodes):
-    mb_barcodes = []
-
-    if barcodes is None:
-        return mb_barcodes
-
-    if isinstance(barcodes, str):
-        for tmp in barcodes.split(','):
-            mb_barcodes.append(utils.sanitise_identifier(tmp.strip()))
-        return mb_barcodes
-    elif isinstance(barcodes, list) or isinstance(barcodes, set):
-        for tmp in barcodes:
-            # mb_barcodes.append(tmp.strip())
-            mb_barcodes.append(utils.sanitise_identifier(tmp.strip()))
-        return mb_barcodes
-    else:
-        return mb_barcodes
-
-
-def barcode_match_scorer(mb_barcodes, barcodes):
+def barcode_match_scorer(barcodes1, barcodes2):
     # note that Discogs can have multiple barcodes, MusicBrainz only has one.
+    barcodes1 = utils.normalize_identifier_list(barcodes1)
+    barcodes2 = utils.normalize_identifier_list(barcodes2)
 
-    if isinstance(mb_barcodes, str):
-        tmp_mb_barcodes = mb_barcodes
-        mb_barcodes = []
-        for tmp in tmp_mb_barcodes.split(','):
-            mb_barcodes.append(tmp.strip())
-
-    elif mb_barcodes is None:
-        mb_barcodes = []
-
-    if isinstance(barcodes, str):
-        # convert barcodes string to a list
-        tmp_barcodes = barcodes
-        barcodes = []
-        for tmp in tmp_barcodes.split(','):
-            barcodes.append(tmp.strip())
-
-    elif barcodes is None:
-        # no barcode on the Discogs side
-        barcodes = []
-
-    if len(mb_barcodes) > 0 and len(barcodes) == 0:
-        # only in MusicBrainz
+    if len(barcodes1) > 0 and len(barcodes2) == 0:
+        # only on one side
         return SCORE_WEIGHTS['unilateral_barcode']
-    elif len(mb_barcodes) == 0 and len(barcodes) > 0:
-        # only in Discogs
+    elif len(barcodes1) == 0 and len(barcodes2) > 0:
+        # only on the other side
         return SCORE_WEIGHTS['unilateral_barcode']
-    elif len(mb_barcodes) == 0 and len(barcodes) == 0:
+    elif len(barcodes1) == 0 and len(barcodes2) == 0:
         # neither side
         return SCORE_WEIGHTS['no_barcode']
 
-    for barcode in barcodes:
-        if barcode in mb_barcodes:
+    for tmp in barcodes2:
+        if tmp in barcodes1:
             return SCORE_WEIGHTS['barcode']
 
     return 0
 
 
-def mb_normalize_catnos(catnos):
+def catno_match_scorer(catnos1, catnos2):
 
-    mb_catnos = []
+    catnos1 = utils.normalize_identifier_list(catnos1)
+    catnos2 = utils.normalize_identifier_list(catnos2)
 
-    if catnos is None:
-        return mb_catnos
-
-    if isinstance(catnos, str):
-        for tmp in catnos.split(','):
-            mb_catnos.append(tmp.strip())
-        return mb_catnos
-    elif isinstance(catnos, list):
-        for tmp in catnos:
-            mb_catnos.append(tmp.strip())
-        return mb_catnos
-    elif isinstance(catnos, set):
-        for tmp in catnos:
-            mb_catnos.append(tmp.strip())
-        return mb_catnos
-    else:
-        return mb_catnos
-
-
-def catno_match_scorer(mb_catnos, catnos):
-
-    if isinstance(mb_catnos, str):
-        tmp_catnos = mb_catnos
-        mb_catnos = []
-        for tmp in tmp_catnos.split(','):
-            mb_catnos.append(tmp.strip())
-
-    elif mb_catnos is None:
-        mb_catnos = []
-
-    if isinstance(catnos, str):
-        tmp_catnos = catnos
-        catnos = []
-        for tmp in tmp_catnos.split(','):
-            catnos.append(tmp.strip())
-
-    elif catnos is None:
-        catnos = []
-
-    if len(mb_catnos) > 0 and len(catnos) == 0:
-        # only in MusicBrainz
+    if len(catnos1) > 0 and len(catnos2) == 0:
+        # only on one side
         return SCORE_WEIGHTS['unilateral_catno']
-    elif len(mb_catnos) == 0 and len(catnos) > 0:
-        # only in Discogs
+    elif len(catnos1) == 0 and len(catnos2) > 0:
+        # only on the other side
         return SCORE_WEIGHTS['unilateral_catno']
-    elif len(mb_catnos) == 0 and len(catnos) == 0:
+    elif len(catnos1) == 0 and len(catnos2) == 0:
         # neither side
         return SCORE_WEIGHTS['no_catno']
 
-    for catno in catnos:
-        if catno in mb_catnos:
+    for tmp in catnos2:
+        if tmp in catnos1:
             return SCORE_WEIGHTS['catno']
 
     return 0
@@ -476,10 +401,6 @@ def disambiguator_score(
     mb_country = mb_release.get('country')
     mb_format = mb_get_format(mb_release=mb_release)
     mb_barcode = mb_release.get('barcode')
-    if mb_barcode:
-        mb_barcode = [mb_barcode]
-    else:
-        mb_barcode = None
     mb_catnos = []
     for label_info in mb_release.get('label-info-list'):
         find_catno = label_info.get('catalog-number')
@@ -631,8 +552,9 @@ def mb_browse_releases_by_discogs_release_link(discogs_id=0):
             # Move to the next page
             offset += batch_size
 
-    except musicbrainzngs.musicbrainz.ResponseError:
+    except musicbrainzngs.musicbrainz.ResponseError as e:
         # probably 404
+        logging.debug(e)
         pass
 
     except Exception as e:
@@ -727,6 +649,10 @@ def mb_summarise_release(mb_release=None, mbid=None):
     country = mb_release.get('country')
     if country:
         output.append(country)
+
+    format = mb_get_format(mb_release=mb_release)
+    if format:
+        output.append(format)
 
     lil = mb_release.get('label-info-list')
     if lil:
@@ -1167,6 +1093,28 @@ def mb_find_releases(artist='', title='', catno=None, primary_type=None, country
         return all_results
 
 
+def add_candidates(candidates, releases):
+    """Add missing releases in a list of releases to candidate list"""
+
+    if len(releases) == 0:
+        # nothing to add
+        return candidates
+
+    if len(candidates) == 0:
+        # return the whole list of releases
+        return releases
+
+    # build a set of all existing MBIDs in the candidates list
+    id_set = {item['id'] for item in candidates}
+
+    for release in releases:
+        mbid = release['id']
+        if mbid not in id_set:
+            candidates.append(release)
+
+    return candidates
+
+
 def match_release_in_musicbrainz(discogs_id):
 
     row = db_discogs.fetch_row(discogs_id)
@@ -1178,8 +1126,8 @@ def match_release_in_musicbrainz(discogs_id):
     artist = mb_normalize_artist(row.artist)
     title = mb_normalize_title(row.title)
     country = mb_normalize_country(row.country)
-    catnos = mb_normalize_catnos(row.catnos)
-    barcodes = mb_normalize_barcodes(row.barcodes)
+    catnos = row.catnos
+    barcodes = row.barcodes
     _, primary_type, format, secondary_format = mb_normalize_format(row.format)
 
     # try the Discogs release link first
@@ -1207,16 +1155,15 @@ def match_release_in_musicbrainz(discogs_id):
             best_match_score=PERFECT_SCORE)
         return
 
-    candidates = []
-
     if row.master_id:
         # try the master release to release group link
-        candidates.extend(match_by_discogs_master_link(master_id=row.master_id))
+        candidates = add_candidates(
+            candidates, match_by_discogs_master_link(master_id=row.master_id))
 
     # try some other searches
-    candidates.extend(mb_match_barcodes(barcodes=barcodes))
-    candidates.extend(mb_match_catnos(catnos=catnos))
-    candidates.extend(mb_find_release_group_releases(
+    candidates = add_candidates(candidates, mb_match_barcodes(barcodes=barcodes))
+    candidates = add_candidates(candidates, mb_match_catnos(catnos=catnos))
+    candidates = add_candidates(candidates, mb_find_release_group_releases(
         artist=artist,
         title=title,
         primary_type=primary_type))
@@ -1253,7 +1200,8 @@ def mb_match_barcodes(barcodes):
 
     candidates = []
 
-    for barcode in barcodes:
+    barcodes_list = utils.normalize_identifier_list(barcodes)
+    for barcode in barcodes_list:
         result = musicbrainzngs.search_releases(barcode=barcode)
         releases = result['release-list']
         if len(releases):
@@ -1266,7 +1214,8 @@ def mb_match_catnos(catnos):
 
     candidates = []
 
-    for catno in catnos:
+    catno_list = utils.normalize_identifier_list(catnos)
+    for catno in catno_list:
         result = musicbrainzngs.search_releases(catno=catno)
         releases = result['release-list']
         if len(releases):
@@ -1300,6 +1249,8 @@ def disambiguate_releases(
         if disambiguation_score > best_match_score:
             best_match_score = disambiguation_score
             best_match_release = release
+            # print(f'{best_match_score}% {mb_summarise_release(best_match_release)}')
+
             if best_match_score == PERFECT_SCORE:
                 break
 
@@ -1850,9 +1801,11 @@ def output_match_summary(
         output.append(format)
 
     if catnos and len(catnos):
+        catnos = utils.normalize_identifier_list(catnos)
         output.append(','.join(catnos))
 
     if barcodes and len(barcodes):
+        barcodes = utils.normalize_identifier_list(barcodes)
         output.append(','.join(barcodes))
 
     print(' '.join(output))
