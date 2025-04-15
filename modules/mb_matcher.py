@@ -779,7 +779,7 @@ def find_match_by_discogs_link(artist=None, title=None, country=None, format=Non
         best_match_release = None
 
     elif len(releases) == 1:
-        print(f'🎯 matched {mb_summarise_release(mbid=mb_release.get('id'))}')
+        print(f'🎯 matched {mb_summarise_release(mbid=mb_release.get("id"))}')
         best_match_score = PERFECT_SCORE
         best_match_release = releases[0]
 
@@ -839,10 +839,10 @@ def find_match_by_discogs_link(artist=None, title=None, country=None, format=Non
 
         if best_match_score == PERFECT_SCORE:
             print(
-                f'💯 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get('id'))}')
+                f'💯 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get("id"))}')
         elif best_match_score > MINIMUM_SCORE:
             print(
-                f'📈 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get('id'))}')
+                f'📈 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get("id"))}')
         else:
             # nothing matched
             return None, None, None, 0
@@ -896,9 +896,9 @@ def find_match_by_discogs_link(artist=None, title=None, country=None, format=Non
         barcodes=barcodes)
 
     if best_match_score == PERFECT_SCORE:
-        print(f'💯 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get('id'))}')
+        print(f'💯 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get("id"))}')
     elif best_match_score > MINIMUM_SCORE:
-        print(f'📈 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get('id'))}')
+        print(f'📈 {best_match_score}% match {mb_summarise_release(mbid=best_match_release.get("id"))}')
     else:
         # nothing matched
         return None, None, 0
