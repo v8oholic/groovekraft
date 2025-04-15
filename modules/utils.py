@@ -24,7 +24,7 @@ try:
     with open("config/mediatypes.json", "r", encoding="utf-8") as f:
         MEDIATYPES = json.load(f)
 except FileNotFoundError:
-    logger.error("countries.json not found. Please check your config path.")
+    logger.error("mediatypes.json not found. Please check your config path.")
     MEDIATYPES = {}
 
 
@@ -36,7 +36,6 @@ def normalize_country_name(name):
     if not name:
         return None
 
-    # name = name.strip().lower()
     name = name.strip()
 
     # Move trailing ', the' to the front: 'Bahamas, The' -> 'The Bahamas'
@@ -54,111 +53,87 @@ def normalize_country_name(name):
     # Normalize punctuation and spacing
     name = name.replace("&", "and").replace(",", "").replace("  ", " ")
     return name
-    # return " ".join(word.capitalize() for word in name.split())
 
 
 def convert_format(discogs_format):
-
-    mb_format = discogs_format.get('name')  # for example CD
     primary_type = discogs_format.get('name')  # for example CD
-    quantity = discogs_format.get('qty')
     secondary_types = discogs_format.get('descriptions')  # for example album
 
     if primary_type == 'Vinyl':
-
-        if 'EP' in secondary_types and '7"' in secondary_types:
-            format = '7" EP'
-            mb_primary_type = 'single'
-        elif 'EP' in secondary_types and '12"' in secondary_types:
-            format = '12" EP'
-            mb_primary_type = 'single'
-        elif '12"' in secondary_types:
-            format = '12" Single'
-            mb_primary_type = 'single'
-        elif '7"' in secondary_types:
-            format = '7" Single'
-            mb_primary_type = 'single'
-        elif 'Compilation' in secondary_types:
-            format = 'LP Compilation'
-            mb_primary_type = 'album'
-        elif 'LP' in secondary_types:
-            format = 'LP'
-            mb_primary_type = 'album'
-        else:
-            format = '?'
-            mb_primary_type = "?"
-
+        return convert_vinyl_format(secondary_types)
     elif primary_type == 'CD':
-
-        if 'Mini' in secondary_types:
-            format = 'CD 3" Mini Single'
-            mb_primary_type = 'single'
-        elif 'Single' in secondary_types:
-            format = 'CD Single'
-            mb_primary_type = 'single'
-        elif 'Maxi-Single' in secondary_types:
-            format = 'CD Single'
-            mb_primary_type = 'single'
-        elif 'EP' in secondary_types:
-            format = 'CD EP'
-            mb_primary_type = 'single'
-        elif 'LP' in secondary_types:
-            format = 'CD Album'
-            mb_primary_type = 'album'
-        elif 'Album' in secondary_types:
-            format = 'CD Album'
-            mb_primary_type = 'album'
-        elif 'Mini-Album' in secondary_types:
-            format = 'CD Mini-Album'
-            mb_primary_type = 'album'
-        elif 'Compilation' in secondary_types:
-            format = 'CD Compilation'
-            mb_primary_type = 'album'
-        else:
-            format = "CD Single"
-            mb_primary_type = "single"
-
+        return convert_cd_format(secondary_types)
     elif primary_type == 'Flexi-disc':
-
-        if '7"' in secondary_types:
-            format = '7" flexi-disc'
-            mb_primary_type = 'single'
-        else:
-            format = '?'
-            mb_primary_type = "?"
-
+        return convert_flexi_disc_format(secondary_types)
     elif primary_type == 'Box Set':
+        return convert_box_set_format(secondary_types)
 
-        if '12"' in secondary_types:
-            format = '12" Singles Box Set'
-            mb_primary_type = 'single'
-        elif '7"' in secondary_types:
-            format = '7" Singles Box Set'
-            mb_primary_type = 'single'
-        elif 'LP' in secondary_types:
-            format = "LP Box Set"
-            mb_primary_type = 'album'
-        elif 'EP' in secondary_types:
-            format = "EP Box Set"
-            mb_primary_type = 'single'
-        elif 'Single' in secondary_types:
-            format = 'Singles Box Set'
-            mb_primary_type = 'single'
-        elif 'Maxi-Single' in secondary_types:
-            format = 'Maxi-singles Box Set'
-            mb_primary_type = 'single'
-        else:
-            format = 'Box Set'
-            mb_primary_type = "Other"
+    return '?', '?', discogs_format.get('name')
+
+
+def convert_vinyl_format(secondary_types):
+    if 'EP' in secondary_types and '7"' in secondary_types:
+        return '7" EP', 'single', 'Vinyl'
+    elif 'EP' in secondary_types and '12"' in secondary_types:
+        return '12" EP', 'single', 'Vinyl'
+    elif '12"' in secondary_types:
+        return '12" Single', 'single', 'Vinyl'
+    elif '7"' in secondary_types:
+        return '7" Single', 'single', 'Vinyl'
+    elif 'Compilation' in secondary_types:
+        return 'LP Compilation', 'album', 'Vinyl'
+    elif 'LP' in secondary_types:
+        return 'LP', 'album', 'Vinyl'
     else:
-        format = '?'
-        mb_primary_type = "?"
+        return '?', '?', 'Vinyl'
 
-    return format, mb_primary_type, mb_format
+
+def convert_cd_format(secondary_types):
+    if 'Mini' in secondary_types:
+        return 'CD 3" Mini Single', 'single', 'CD'
+    elif 'Single' in secondary_types:
+        return 'CD Single', 'single', 'CD'
+    elif 'Maxi-Single' in secondary_types:
+        return 'CD Single', 'single', 'CD'
+    elif 'EP' in secondary_types:
+        return 'CD EP', 'single', 'CD'
+    elif 'LP' in secondary_types:
+        return 'CD Album', 'album', 'CD'
+    elif 'Album' in secondary_types:
+        return 'CD Album', 'album', 'CD'
+    elif 'Mini-Album' in secondary_types:
+        return 'CD Mini-Album', 'album', 'CD'
+    elif 'Compilation' in secondary_types:
+        return 'CD Compilation', 'album', 'CD'
+    else:
+        return 'CD Single', 'single', 'CD'
+
+
+def convert_flexi_disc_format(secondary_types):
+    if '7"' in secondary_types:
+        return '7" flexi-disc', 'single', 'Flexi-disc'
+    return '?', '?', 'Flexi-disc'
+
+
+def convert_box_set_format(secondary_types):
+    if '12"' in secondary_types:
+        return '12" Singles Box Set', 'single', 'Box Set'
+    elif '7"' in secondary_types:
+        return '7" Singles Box Set', 'single', 'Box Set'
+    elif 'LP' in secondary_types:
+        return "LP Box Set", 'album', 'Box Set'
+    elif 'EP' in secondary_types:
+        return "EP Box Set", 'single', 'Box Set'
+    elif 'Single' in secondary_types:
+        return 'Singles Box Set', 'single', 'Box Set'
+    elif 'Maxi-Single' in secondary_types:
+        return 'Maxi-singles Box Set', 'single', 'Box Set'
+    else:
+        return 'Box Set', 'Other', 'Box Set'
 
 
 def sanitise_identifier(catno):
-    catno_string = ''.join(chr for chr in catno if chr.isalnum()).casefold() or chr == '-'
+    catno_string = ''.join(chr for chr in catno if chr.isalnum() or chr == '-').casefold()
     return catno_string
 
 
@@ -171,13 +146,13 @@ def normalize_identifier_list(value):
     value_set = []
 
     if value is None:
-        pass
+        return []
 
     elif isinstance(value, str):
         for tmp in value.split(','):
             value_set.append(sanitise_identifier(tmp.strip()))
 
-    elif isinstance(value, list) or isinstance(value, set):
+    elif isinstance(value, (list, set)):
         for tmp in value:
             value_set.append(sanitise_identifier(tmp.strip()))
 
@@ -203,13 +178,11 @@ def sanitise_compare_string(tmp):
 def convert_country_from_discogs_to_musicbrainz(discogs_country):
     musicbrainz_country = COUNTRIES.get(normalize_country_name(discogs_country))
     if not musicbrainz_country:
-        pass
         logger.warning(f"⚠️ Unknown country mapping for: {discogs_country}")
     return musicbrainz_country
 
 
 def parse_date(date_str):
-
     if date_str == '0':
         return None
 
@@ -223,6 +196,10 @@ def parse_date(date_str):
         return None
 
     date_object = dateparser.parse(date_str, date_formats=date_formats, settings=settings)
+
+    if not date_object:
+        logger.warning(f"Could not parse date: {date_str}")
+        return None
 
     return date_object.date()
 
@@ -305,8 +282,13 @@ def earliest_date(dt1_str, dt2_str):
     return dt1_str
 
 
-def parse_and_humanize_date(ymd_date):
+def pluralize(count, singular, plural=None):
+    if plural is None:
+        plural = singular + 's'
+    return f"{count} {singular}" if count == 1 else f"{count} {plural}"
 
+
+def parse_and_humanize_date(ymd_date):
     if not ymd_date:
         return ''
 
@@ -356,10 +338,8 @@ def humanize_date_delta(dt1, dt2=datetime.datetime.today().date()):
         # just the year
         x = []
 
-        if rd.years == 1:
-            x.append(f'{rd.years} year')
-        elif rd.years > 1:
-            x.append(f'{rd.years} years')
+        if rd.years:
+            x.append(pluralize(rd.years, 'year'))
 
         xl = len(x)
         if xl == 1:
@@ -376,15 +356,11 @@ def humanize_date_delta(dt1, dt2=datetime.datetime.today().date()):
 
         x = []
 
-        if rd.years == 1:
-            x.append(f'{rd.years} year')
-        elif rd.years > 1:
-            x.append(f'{rd.years} years')
+        if rd.years:
+            x.append(pluralize(rd.years, 'year'))
 
-        if rd.months == 1:
-            x.append(f'{rd.months} month')
-        elif rd.months > 1:
-            x.append(f'{rd.months} months')
+        if rd.months:
+            x.append(pluralize(rd.months, 'month'))
 
         xl = len(x)
         if xl == 1:
@@ -400,20 +376,14 @@ def humanize_date_delta(dt1, dt2=datetime.datetime.today().date()):
 
         x = []
 
-        if rd.years == 1:
-            x.append(f'{rd.years} year')
-        elif rd.years > 1:
-            x.append(f'{rd.years} years')
+        if rd.years:
+            x.append(pluralize(rd.years, 'year'))
 
-        if rd.months == 1:
-            x.append(f'{rd.months} month')
-        elif rd.months > 1:
-            x.append(f'{rd.months} months')
+        if rd.months:
+            x.append(pluralize(rd.months, 'month'))
 
-        if rd.days == 1:
-            x.append(f'{rd.days} day')
-        elif rd.days > 1:
-            x.append(f'{rd.days} days')
+        if rd.days:
+            x.append(pluralize(rd.days, 'day'))
 
         xl = len(x)
         if xl == 1:
