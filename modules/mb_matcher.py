@@ -72,229 +72,83 @@ def mb_normalize_title(title):
     return title
 
 
+def parse_discogs_format(primary_type, secondary_types):
+    if primary_type == 'Vinyl':
+        if 'EP' in secondary_types and '7"' in secondary_types:
+            return '7" EP', 'single'
+        elif 'EP' in secondary_types and '12"' in secondary_types:
+            return '12" EP', 'single'
+        elif '12"' in secondary_types:
+            return '12" Single', 'single'
+        elif '7"' in secondary_types:
+            return '7" Single', 'single'
+        elif 'Compilation' in secondary_types:
+            return 'LP Compilation', 'album'
+        elif 'LP' in secondary_types:
+            return 'LP', 'album'
+        else:
+            return '?', '?'
+
+    elif primary_type == 'CD':
+        if 'Mini' in secondary_types:
+            return 'CD 3" Mini Single', 'single'
+        elif 'Single' in secondary_types or 'Maxi-Single' in secondary_types:
+            return 'CD Single', 'single'
+        elif 'EP' in secondary_types:
+            return 'CD EP', 'single'
+        elif 'HDCD' in secondary_types and 'Album' in secondary_types:
+            return 'CD HDCD Album', 'album'
+        elif 'LP' in secondary_types or 'Album' in secondary_types:
+            return 'CD Album', 'album'
+        elif 'Mini-Album' in secondary_types:
+            return 'CD Mini-Album', 'album'
+        elif 'Compilation' in secondary_types:
+            return 'CD Compilation', 'album'
+        else:
+            return 'CD Single', 'single'
+
+    elif primary_type == 'Flexi-disc':
+        if '7"' in secondary_types:
+            return '7" flexi-disc', 'single'
+        return '?', '?'
+
+    elif primary_type == 'Box Set':
+        if '12"' in secondary_types:
+            return '12" Singles Box Set', 'single'
+        elif '7"' in secondary_types:
+            return '7" Singles Box Set', 'single'
+        elif 'LP' in secondary_types:
+            return 'LP Box Set', 'album'
+        elif 'EP' in secondary_types:
+            return 'EP Box Set', 'single'
+        elif 'Single' in secondary_types or 'Maxi-Single' in secondary_types:
+            return 'Singles Box Set', 'single'
+        return 'Box Set', 'Other'
+
+    return '?', '?'
+
+
 def mb_normalize_format(discogs_format):
     if not discogs_format:
         raise Exception('format error')
 
     parts = discogs_format.split(':')
-
     primary_type = parts[0].strip()
-    secondary_types = []
-    for tmp in parts[1].split(','):
-        secondary_types.append(tmp.strip())
+    secondary_types = [p.strip() for p in parts[1].split(',')] if len(parts) > 1 else []
 
-    mb_secondary_type = None
+    fmt, mb_primary_type = parse_discogs_format(primary_type, secondary_types)
+    mb_secondary_type = f'{primary_type} 12"' if '12"' in secondary_types else primary_type
 
-    if primary_type == 'Vinyl':
-
-        if 'EP' in secondary_types and '7"' in secondary_types:
-            format = '7" EP'
-            mb_primary_type = 'single'
-            mb_secondary_type = 'Vinyl 7"'
-        elif 'EP' in secondary_types and '12"' in secondary_types:
-            format = '12" EP'
-            mb_primary_type = 'single'
-            mb_secondary_type = 'Vinyl 7"'
-        elif '12"' in secondary_types:
-            format = '12" Single'
-            mb_primary_type = 'single'
-            mb_secondary_type = 'Vinyl 12"'
-        elif '7"' in secondary_types:
-            format = '7" Single'
-            mb_primary_type = 'single'
-            mb_secondary_type = 'Vinyl 7"'
-        elif 'Compilation' in secondary_types:
-            format = 'LP Compilation'
-            mb_primary_type = 'album'
-            mb_secondary_type = 'Vinyl 12"'
-        elif 'LP' in secondary_types:
-            format = 'LP'
-            mb_primary_type = 'album'
-            mb_secondary_type = 'Vinyl 12"'
-        else:
-            format = '?'
-            mb_primary_type = "?"
-            mb_secondary_type = "?"
-    elif primary_type == 'CD':
-        mb_secondary_type = 'CD'
-
-        if 'Mini' in secondary_types:
-            format = 'CD 3" Mini Single'
-            mb_primary_type = 'single'
-        elif 'Single' in secondary_types:
-            format = 'CD Single'
-            mb_primary_type = 'single'
-        elif 'Maxi-Single' in secondary_types:
-            format = 'CD Single'
-            mb_primary_type = 'single'
-        elif 'EP' in secondary_types:
-            format = 'CD EP'
-            mb_primary_type = 'single'
-        elif 'HDCD' in secondary_types and 'Album' in secondary_types:
-            format = 'CD HDCD Album'
-            mb_primary_type = 'album'
-        elif 'LP' in secondary_types:
-            format = 'CD Album'
-            mb_primary_type = 'album'
-        elif 'Album' in secondary_types:
-            format = 'CD Album'
-            mb_primary_type = 'album'
-        elif 'Mini-Album' in secondary_types:
-            format = 'CD Mini-Album'
-            mb_primary_type = 'album'
-        elif 'Compilation' in secondary_types:
-            format = 'CD Compilation'
-            mb_primary_type = 'album'
-        else:
-            format = "CD Single"
-            mb_primary_type = "single"
-
-    elif primary_type == 'Flexi-disc':
-        mb_secondary_type = '?'
-
-        if '7"' in secondary_types:
-            format = '7" flexi-disc'
-            mb_primary_type = 'single'
-        else:
-            format = '?'
-            mb_primary_type = "?"
-
-    elif primary_type == 'Box Set':
-        mb_secondary_type = '?'
-
-        if '12"' in secondary_types:
-            format = '12" Singles Box Set'
-            mb_primary_type = 'single'
-        elif '7"' in secondary_types:
-            format = '7" Singles Box Set'
-            mb_primary_type = 'single'
-        elif 'LP' in secondary_types:
-            format = "LP Box Set"
-            mb_primary_type = 'album'
-        elif 'EP' in secondary_types:
-            format = "EP Box Set"
-            mb_primary_type = 'single'
-        elif 'Single' in secondary_types:
-            format = 'Singles Box Set'
-            mb_primary_type = 'single'
-        elif 'Maxi-Single' in secondary_types:
-            format = 'Maxi-singles Box Set'
-            mb_primary_type = 'single'
-        else:
-            format = 'Box Set'
-            mb_primary_type = "Other"
-    else:
-        format = '?'
-        mb_primary_type = "?"
-        mb_secondary_type = '?'
-
-    return format, mb_primary_type, primary_type, mb_secondary_type
-
-    # for format in discogs_release.formats:
-    #     format_desc = ','.join(format.get('descriptions'))
-    # # formats = [x.data['name'] for x in release.formats]
-
-    # format, mb_primary_type, mb_format = convert_format(discogs_release.formats[0])
+    return fmt, mb_primary_type, primary_type, mb_secondary_type
 
 
 def convert_format(discogs_format):
+    primary_type = discogs_format.get('name')
+    secondary_types = discogs_format.get('descriptions') or []
 
-    mb_format = discogs_format.get('name')  # for example CD
-    primary_type = discogs_format.get('name')  # for example CD
-    quantity = discogs_format.get('qty')
-    secondary_types = discogs_format.get('descriptions')  # for example album
+    fmt, mb_primary_type = parse_discogs_format(primary_type, secondary_types)
 
-    if primary_type == 'Vinyl':
-
-        if 'EP' in secondary_types and '7"' in secondary_types:
-            format = '7" EP'
-            mb_primary_type = 'single'
-        elif 'EP' in secondary_types and '12"' in secondary_types:
-            format = '12" EP'
-            mb_primary_type = 'single'
-        elif '12"' in secondary_types:
-            format = '12" Single'
-            mb_primary_type = 'single'
-        elif '7"' in secondary_types:
-            format = '7" Single'
-            mb_primary_type = 'single'
-        elif 'Compilation' in secondary_types:
-            format = 'LP Compilation'
-            mb_primary_type = 'album'
-        elif 'LP' in secondary_types:
-            format = 'LP'
-            mb_primary_type = 'album'
-        else:
-            format = '?'
-            mb_primary_type = "?"
-
-    elif primary_type == 'CD':
-
-        if 'Mini' in secondary_types:
-            format = 'CD 3" Mini Single'
-            mb_primary_type = 'single'
-        elif 'Single' in secondary_types:
-            format = 'CD Single'
-            mb_primary_type = 'single'
-        elif 'Maxi-Single' in secondary_types:
-            format = 'CD Single'
-            mb_primary_type = 'single'
-        elif 'EP' in secondary_types:
-            format = 'CD EP'
-            mb_primary_type = 'single'
-        elif 'LP' in secondary_types:
-            format = 'CD Album'
-            mb_primary_type = 'album'
-        elif 'Album' in secondary_types:
-            format = 'CD Album'
-            mb_primary_type = 'album'
-        elif 'Mini-Album' in secondary_types:
-            format = 'CD Mini-Album'
-            mb_primary_type = 'album'
-        elif 'Compilation' in secondary_types:
-            format = 'CD Compilation'
-            mb_primary_type = 'album'
-        else:
-            format = "CD Single"
-            mb_primary_type = "single"
-
-    elif primary_type == 'Flexi-disc':
-
-        if '7"' in secondary_types:
-            format = '7" flexi-disc'
-            mb_primary_type = 'single'
-        else:
-            format = '?'
-            mb_primary_type = "?"
-
-    elif primary_type == 'Box Set':
-
-        if '12"' in secondary_types:
-            format = '12" Singles Box Set'
-            mb_primary_type = 'single'
-        elif '7"' in secondary_types:
-            format = '7" Singles Box Set'
-            mb_primary_type = 'single'
-        elif 'LP' in secondary_types:
-            format = "LP Box Set"
-            mb_primary_type = 'album'
-        elif 'EP' in secondary_types:
-            format = "EP Box Set"
-            mb_primary_type = 'single'
-        elif 'Single' in secondary_types:
-            format = 'Singles Box Set'
-            mb_primary_type = 'single'
-        elif 'Maxi-Single' in secondary_types:
-            format = 'Maxi-singles Box Set'
-            mb_primary_type = 'single'
-        else:
-            format = 'Box Set'
-            mb_primary_type = "Other"
-    else:
-        format = '?'
-        mb_primary_type = "?"
-
-    return format, mb_primary_type, primary_type
+    return fmt, mb_primary_type, primary_type
 
 
 def mb_normalize_country(country):
