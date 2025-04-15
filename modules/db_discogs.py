@@ -1,5 +1,4 @@
 from modules import db
-from modules import utils
 
 
 def update_field_if_changed(discogs_id, field_name, new_value):
