@@ -106,7 +106,7 @@ def scrape_discogs(config):
 
         print(f'{len(rows)} rows')
 
-        for idx, row in enumerate(rows):
+        for row in rows:
             print(f'scrape {db.db_summarise_row(row.discogs_id)}')
             scrape_row(discogs_client=discogs_client, discogs_id=row.discogs_id)
 
