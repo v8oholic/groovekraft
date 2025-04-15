@@ -2,184 +2,60 @@ from modules import db
 from modules import utils
 
 
-def set_artist(discogs_id, new_value):
-
+def update_field_if_changed(discogs_id, field_name, new_value):
     with db.context_manager() as cur:
         cur.execute(f"""
-            SELECT artist
+            SELECT {field_name}
             FROM discogs_releases
             WHERE discogs_id = ? """, (discogs_id,))
         row = cur.fetchone()
         if not row:
             raise Exception('Unexpected row not found error')
-        old_value = row.artist
+        old_value = getattr(row, field_name)
 
         if old_value == new_value:
             return
 
-        print(db.row_change(discogs_id, 'artist', new_value, old_value))
-        cur.execute("""
+        print(db.row_change(discogs_id, field_name, new_value, old_value))
+        cur.execute(f"""
             UPDATE discogs_releases
-            SET artist = ?
+            SET {field_name} = ?
             WHERE discogs_id = ? """, (new_value, discogs_id))
+
+
+def set_artist(discogs_id, new_value):
+    update_field_if_changed(discogs_id, 'artist', new_value)
 
 
 def set_title(discogs_id, new_value):
-
-    with db.context_manager() as cur:
-        cur.execute(f"""
-            SELECT title
-            FROM discogs_releases
-            WHERE discogs_id = ? """, (discogs_id,))
-        row = cur.fetchone()
-        if not row:
-            raise Exception('Unexpected row not found error')
-        old_value = row.title
-
-        if old_value == new_value:
-            return
-
-        print(db.row_change(discogs_id, 'title', new_value, old_value))
-        cur.execute("""
-            UPDATE discogs_releases
-            SET title = ?
-            WHERE discogs_id = ? """, (new_value, discogs_id))
+    update_field_if_changed(discogs_id, 'title', new_value)
 
 
 def set_format(discogs_id, new_value):
-
-    with db.context_manager() as cur:
-        cur.execute(f"""
-            SELECT format
-            FROM discogs_releases
-            WHERE discogs_id = ? """, (discogs_id,))
-        row = cur.fetchone()
-        if not row:
-            raise Exception('Unexpected row not found error')
-        old_value = row.format
-
-        if old_value == new_value:
-            return
-
-        print(db.row_change(discogs_id, 'format', new_value, old_value))
-        cur.execute("""
-            UPDATE discogs_releases
-            SET format = ?
-            WHERE discogs_id = ? """, (new_value, discogs_id))
+    update_field_if_changed(discogs_id, 'format', new_value)
 
 
 def set_country(discogs_id, new_value):
-
-    with db.context_manager() as cur:
-        cur.execute(f"""
-            SELECT country
-            FROM discogs_releases
-            WHERE discogs_id = ? """, (discogs_id,))
-        row = cur.fetchone()
-        if not row:
-            raise Exception('Unexpected row not found error')
-        old_value = row.country
-
-        if old_value == new_value:
-            return
-
-        print(db.row_change(discogs_id, 'country', new_value, old_value))
-        cur.execute("""
-            UPDATE discogs_releases
-            SET country = ?
-            WHERE discogs_id = ? """, (new_value, discogs_id))
+    update_field_if_changed(discogs_id, 'country', new_value)
 
 
 def set_barcodes(discogs_id, new_value):
-
-    with db.context_manager() as cur:
-        cur.execute(f"""
-            SELECT barcodes
-            FROM discogs_releases
-            WHERE discogs_id = ? """, (discogs_id,))
-        row = cur.fetchone()
-        if not row:
-            raise Exception('Unexpected row not found error')
-        old_value = row.barcodes
-
-        if old_value == new_value:
-            return
-
-        print(db.row_change(discogs_id, 'barcodes', new_value, old_value))
-        cur.execute("""
-            UPDATE discogs_releases
-            SET barcodes = ?
-            WHERE discogs_id = ? """, (new_value, discogs_id))
+    update_field_if_changed(discogs_id, 'barcodes', new_value)
 
 
 def set_catnos(discogs_id, new_value):
-
-    with db.context_manager() as cur:
-        cur.execute(f"""
-            SELECT catnos
-            FROM discogs_releases
-            WHERE discogs_id = ? """, (discogs_id,))
-        row = cur.fetchone()
-        if not row:
-            raise Exception('Unexpected row not found error')
-        old_value = row.catnos
-
-        if old_value == new_value:
-            return
-
-        print(db.row_change(discogs_id, 'catnos', new_value, old_value))
-        cur.execute("""
-            UPDATE discogs_releases
-            SET catnos = ?
-            WHERE discogs_id = ? """, (new_value, discogs_id))
+    update_field_if_changed(discogs_id, 'catnos', new_value)
 
 
 def set_year(discogs_id, new_value):
-
-    with db.context_manager() as cur:
-        cur.execute(f"""
-            SELECT year
-            FROM discogs_releases
-            WHERE discogs_id = ? """, (discogs_id,))
-        row = cur.fetchone()
-        if not row:
-            raise Exception('Unexpected row not found error')
-        old_value = row.year
-
-        if old_value == new_value:
-            return
-
-        print(db.row_change(discogs_id, 'year', new_value, old_value))
-        cur.execute("""
-            UPDATE discogs_releases
-            SET year = ?
-            WHERE discogs_id = ? """, (new_value, discogs_id))
+    update_field_if_changed(discogs_id, 'year', new_value)
 
 
 def set_master_id(discogs_id, new_value):
-
-    with db.context_manager() as cur:
-        cur.execute(f"""
-            SELECT master_id
-            FROM discogs_releases
-            WHERE discogs_id = ? """, (discogs_id,))
-        row = cur.fetchone()
-        if not row:
-            raise Exception('Unexpected row not found error')
-        old_value = row.master_id
-
-        if old_value == new_value:
-            return
-
-        print(db.row_change(discogs_id, 'master_id', new_value, old_value))
-        cur.execute("""
-            UPDATE discogs_releases
-            SET master_id = ?
-            WHERE discogs_id = ? """, (new_value, discogs_id))
+    update_field_if_changed(discogs_id, 'master_id', new_value)
 
 
 def set_release_date(discogs_id, new_value, force=False):
-
     with db.context_manager() as cur:
         cur.execute("""
             SELECT release_date
@@ -194,7 +70,6 @@ def set_release_date(discogs_id, new_value, force=False):
             return
 
         if not force:
-
             if old_value is not None and (new_value is None or len(new_value) < len(old_value)):
                 print(db.row_ignore_change(discogs_id, 'release_date', new_value, old_value, "shorter"))
                 return
@@ -212,25 +87,7 @@ def set_release_date(discogs_id, new_value, force=False):
 
 
 def set_sort_name(discogs_id, new_value):
-
-    with db.context_manager() as cur:
-        cur.execute(f"""
-            SELECT sort_name
-            FROM discogs_releases
-            WHERE discogs_id = ? """, (discogs_id,))
-        row = cur.fetchone()
-        if not row:
-            raise Exception('Unexpected row not found error')
-        old_value = row.sort_name
-
-        if old_value == new_value:
-            return
-
-        print(db.row_change(discogs_id, 'sort_name', new_value, old_value))
-        cur.execute("""
-            UPDATE discogs_releases
-            SET sort_name = ?
-            WHERE discogs_id = ? """, (new_value, discogs_id))
+    update_field_if_changed(discogs_id, 'sort_name', new_value)
 
 
 def insert_row(
