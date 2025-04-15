@@ -83,31 +83,40 @@ def mb_normalize_format(discogs_format):
     for tmp in parts[1].split(','):
         secondary_types.append(tmp.strip())
 
+    mb_secondary_type = None
+
     if primary_type == 'Vinyl':
 
         if 'EP' in secondary_types and '7"' in secondary_types:
             format = '7" EP'
             mb_primary_type = 'single'
+            mb_secondary_type = 'Vinyl 7"'
         elif 'EP' in secondary_types and '12"' in secondary_types:
             format = '12" EP'
             mb_primary_type = 'single'
+            mb_secondary_type = 'Vinyl 7"'
         elif '12"' in secondary_types:
             format = '12" Single'
             mb_primary_type = 'single'
+            mb_secondary_type = 'Vinyl 12"'
         elif '7"' in secondary_types:
             format = '7" Single'
             mb_primary_type = 'single'
+            mb_secondary_type = 'Vinyl 7"'
         elif 'Compilation' in secondary_types:
             format = 'LP Compilation'
             mb_primary_type = 'album'
+            mb_secondary_type = 'Vinyl 12"'
         elif 'LP' in secondary_types:
             format = 'LP'
             mb_primary_type = 'album'
+            mb_secondary_type = 'Vinyl 12"'
         else:
             format = '?'
             mb_primary_type = "?"
-
+            mb_secondary_type = "?"
     elif primary_type == 'CD':
+        mb_secondary_type = 'CD'
 
         if 'Mini' in secondary_types:
             format = 'CD 3" Mini Single'
@@ -141,6 +150,7 @@ def mb_normalize_format(discogs_format):
             mb_primary_type = "single"
 
     elif primary_type == 'Flexi-disc':
+        mb_secondary_type = '?'
 
         if '7"' in secondary_types:
             format = '7" flexi-disc'
@@ -150,6 +160,7 @@ def mb_normalize_format(discogs_format):
             mb_primary_type = "?"
 
     elif primary_type == 'Box Set':
+        mb_secondary_type = '?'
 
         if '12"' in secondary_types:
             format = '12" Singles Box Set'
@@ -175,8 +186,9 @@ def mb_normalize_format(discogs_format):
     else:
         format = '?'
         mb_primary_type = "?"
+        mb_secondary_type = '?'
 
-    return format, mb_primary_type, primary_type
+    return format, mb_primary_type, primary_type, mb_secondary_type
 
     # for format in discogs_release.formats:
     #     format_desc = ','.join(format.get('descriptions'))
@@ -297,33 +309,15 @@ def mb_normalize_barcodes(barcodes):
 
     if isinstance(barcodes, str):
         for tmp in barcodes.split(','):
-            mb_barcodes.append(tmp.strip())
+            mb_barcodes.append(utils.sanitise_identifier(tmp.strip()))
         return mb_barcodes
-    elif isinstance(barcodes, list):
+    elif isinstance(barcodes, list) or isinstance(barcodes, set):
         for tmp in barcodes:
-            mb_barcodes.append(tmp.strip())
-        return mb_barcodes
-    elif isinstance(barcodes, set):
-        for tmp in barcodes:
-            mb_barcodes.append(tmp.strip())
+            # mb_barcodes.append(tmp.strip())
+            mb_barcodes.append(utils.sanitise_identifier(tmp.strip()))
         return mb_barcodes
     else:
         return mb_barcodes
-
-    # barcodes = []
-    # for identifier in identifiers:
-    #     if identifier['type'].casefold() == 'barcode':
-    #         barcodes.append(sanitise_identifier(identifier['value']))
-    # return ', '.join(sorted(set(barcodes)))
-    # # get the barcode
-    # barcode = None
-    # barcodes = []
-    # discogs_identifiers = discogs_release.fetch('identifiers')
-    # for identifier in discogs_identifiers:
-    #     if identifier['type'] == 'Barcode':
-    #         barcode = sanitise_identifier(identifier['value'])
-    #         barcodes.append(sanitise_identifier(identifier['value']))
-    # barcodes = list(set(barcodes))
 
 
 def barcode_match_scorer(mb_barcodes, barcodes):
@@ -462,13 +456,13 @@ def disambiguator_score(
         else:
             raise Exception("Unable to load MusicBrainz release")
 
-    print(summarise(
-        artist=artist,
-        title=title,
-        country=country,
-        format=format,
-        catnos=catnos,
-        barcodes=barcodes))
+    # print(summarise(
+    #     artist=artist,
+    #     title=title,
+    #     country=country,
+    #     format=format,
+    #     catnos=catnos,
+    #     barcodes=barcodes))
 
     artist_score = 0
     title_score = 0
@@ -481,8 +475,6 @@ def disambiguator_score(
     mb_title = mb_release.get('title')
     mb_country = mb_release.get('country')
     mb_format = mb_get_format(mb_release=mb_release)
-    if mb_format in ['12" Vinyl', '7" Vinyl']:
-        mb_format = 'Vinyl'
     mb_barcode = mb_release.get('barcode')
     if mb_barcode:
         mb_barcode = [mb_barcode]
@@ -505,7 +497,8 @@ def disambiguator_score(
 
     if country == mb_country:
         country_score = SCORE_WEIGHTS['country']
-    format_score = fuzzy_match(format, mb_format, 'format') * SCORE_WEIGHTS['format'] / 100
+
+    format_score = fuzz.token_sort_ratio(format, mb_format) * SCORE_WEIGHTS['format'] / 100
     barcode_score = barcode_match_scorer(barcodes, mb_barcode)
     catno_score = catno_match_scorer(catnos, mb_catnos)
 
@@ -531,7 +524,7 @@ def fuzzy_match(str1, str2, desc=''):
     if str1 == str2:
         ratio = PERFECT_SCORE
         # print(f'match status for {desc}: "{str1}" "{str2}" {ratio}%')
-        return PERFECT_SCORE
+        return ratio
 
     # simple = round(fuzz.ratio(str1, str2), 1)
     # partial = round(fuzz.partial_ratio(str1, str2), 1)
@@ -882,7 +875,7 @@ def find_match_by_discogs_link(artist=None, title=None, country=None, format=Non
     if best_match_score > MINIMUM_SCORE:
         # success - load the release group too
         mb_release = musicbrainzngs.get_release_by_id(best_match_release['id'], includes=[
-                                                      "release-groups", 'artists', 'artist-credits'])
+            "release-groups", 'artists', 'artist-credits'])
         mb_release = mb_release.get('release')
 
         release_group_id = mb_release.get('release-group').get('id')
@@ -1187,7 +1180,7 @@ def match_release_in_musicbrainz(discogs_id):
     country = mb_normalize_country(row.country)
     catnos = mb_normalize_catnos(row.catnos)
     barcodes = mb_normalize_barcodes(row.barcodes)
-    _, primary_type, format = mb_normalize_format(row.format)
+    _, primary_type, format, secondary_format = mb_normalize_format(row.format)
 
     # try the Discogs release link first
     candidates = mb_browse_releases_by_discogs_release_link(discogs_id=discogs_id)
@@ -1233,7 +1226,7 @@ def match_release_in_musicbrainz(discogs_id):
         artist=artist,
         title=title,
         country=country,
-        format=format,
+        format=secondary_format,
         catnos=catnos,
         barcodes=barcodes)
 
@@ -1241,7 +1234,7 @@ def match_release_in_musicbrainz(discogs_id):
         artist=artist,
         title=title,
         country=country,
-        format=format,
+        format=secondary_format,
         catnos=catnos,
         barcodes=barcodes,
         score=best_match_score)
@@ -1434,12 +1427,16 @@ def match_discogs_against_mb(config=None):
 
     if config.id:
         rows = db_discogs.fetch_discogs_release_rows(f'WHERE discogs_id = {config.id}')
+        print(f'matching just release {config.id}')
     elif config.begin:
         rows = db_discogs.fetch_discogs_release_rows(f'WHERE discogs_id >= {config.begin}')
+        print(f'matching {len(rows)} releases starting from {config.begin}')
     elif config.unmatched:
         rows = db_discogs.fetch_unmatched_discogs_release_rows()
+        print(f'matching {len(rows)} previously unmatched releases')
     else:
         rows = db_discogs.fetch_discogs_release_rows()
+        print(f'matching all {len(rows)} releases')
 
     for index, row in enumerate(rows):
         if config.verbose:

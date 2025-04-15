@@ -101,7 +101,7 @@ def normalize_barcodes(identifiers):
 
 
 def normalize_catnos(labels):
-    catnos_set = set([utils.sanitise_identifier(x.data['catno']) for x in labels])
+    catnos_set = set([x.data['catno'] for x in labels])
     return ', '.join(sorted(catnos_set))
 
 

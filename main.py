@@ -555,7 +555,7 @@ def main(config):
     if args.import_items:
         discogs_importer.import_from_discogs(config=config)
         mb_matcher.match_discogs_against_mb(config=config)
-        import_old_release_dates(config=config)
+        # import_old_release_dates(config=config)
 
     elif args.update_items:
         mb_matcher.match_discogs_against_mb(config=config)
