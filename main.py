@@ -6,14 +6,7 @@ import discogs_client
 import sys
 import argparse
 import signal
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
-import pandas as pd
 from dateutil import parser
-import dateparser
 import logging
 import configparser
 
@@ -22,6 +15,7 @@ from modules import utils
 from modules import mb_matcher
 from modules import discogs_importer
 from modules import db
+from modules import scraper
 from modules.config import AppConfig
 
 logger = logging.getLogger(__name__)
@@ -30,155 +24,6 @@ logger = logging.getLogger(__name__)
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C!')
     sys.exit(0)
-
-
-def scrape_row(discogs_client, discogs_id=0):
-
-    row = db_discogs.fetch_row(discogs_id)
-
-    discogs_release = discogs_client.release(discogs_id)
-
-    release_url = discogs_release.url
-
-    # scrape the release first
-    logger.debug(release_url.split('/')[-1])
-    df = scrape_table(release_url)
-    if df is not None:
-        # Save to CSV if needed
-        # df.to_csv(f"output_{release_url.split('/')[-1]}.csv", index=False)
-
-        try:
-            release_date_str = df.at[0, 'Released:']
-            if release_date_str:
-                # attempt day, month and year match first
-                settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
-                            'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['day', 'month', 'year']}
-
-                date_object = dateparser.parse(release_date_str, settings=settings)
-
-                if date_object:
-                    release_date_str = date_object.strftime("%Y-%m-%d")
-
-                else:
-                    # attempt month and year match
-                    settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
-                                'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['month', 'year']}
-                    date_object = dateparser.parse(release_date_str, settings=settings)
-
-                    if date_object:
-                        release_date_str = date_object.strftime("%Y-%m")
-
-                    else:
-                        # attempt year match
-                        settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first',
-                                    'DATE_ORDER': 'DMY', 'PREFER_LOCALE_DATE_ORDER': False, 'REQUIRE_PARTS': ['year']}
-                        date_object = dateparser.parse(release_date_str, settings=settings)
-
-                        if date_object:
-                            release_date_str = date_object.strftime("%Y")
-                        else:
-                            release_date_str = ''
-
-        except Exception as e:
-            logger.warning(f"No release date on release")
-            release_date_str = ''
-        finally:
-
-            # only use the date if it's earlier than the existing one
-            release_date = utils.earliest_date(row.release_date, release_date_str)
-            db_discogs.set_release_date(row.discogs_id, release_date)
-
-
-def scrape_discogs(config):
-
-    discogs_client, discogs_access_token, discogs_access_secret = discogs_importer.connect_to_discogs(
-        config)
-
-    with db.context_manager() as cur:
-
-        cur.execute("""
-            SELECT *
-            FROM discogs_releases
-            ORDER BY sort_name, discogs_id
-        """)
-
-        rows = cur.fetchall()
-
-        print(f'{len(rows)} rows')
-
-        for row in rows:
-            print(f'scrape {db.db_summarise_row(row.discogs_id)}')
-            scrape_row(discogs_client=discogs_client, discogs_id=row.discogs_id)
-
-
-def scrape_table(url):
-
-    try:
-        driver = init_driver()
-
-        # Open the URL using Selenium
-        driver.get(url)
-
-        # Wait for page to load (adjust the timeout as needed)
-        driver.implicitly_wait(10)  # Wait for up to 10 seconds
-
-        x = driver.find_element(By.CLASS_NAME, "info_LD8Ql")
-
-        # Find the table
-        # table = driver.find_element(By.TAG_NAME, 'table_c5ftk')
-        table = driver.find_element(By.CLASS_NAME, 'table_c5ftk')
-        if not table:
-            logger.warning(f"No table found at {url}")
-            return None
-
-        # Extract headers
-        headers = table.find_elements(By.TAG_NAME, 'th')
-        table_headers = [header.text.strip() for header in headers]
-
-        # Extract rows
-        rows = []
-        rows_elements = table.find_elements(By.TAG_NAME, 'tr')  # [1:]  # Skip header row
-        for row in rows_elements:
-            cells = row.find_elements(By.TAG_NAME, 'td')
-            row_data = [cell.text.strip() for cell in cells]
-            if row_data:
-                rows.append(row_data[0])
-
-        # Create DataFrame
-        return pd.DataFrame([rows], columns=table_headers) if table_headers else pd.DataFrame(rows)
-
-    except Exception as e:
-        logger.error(f"Error scraping {url}: {e}")
-        return None
-    finally:
-        driver.quit()  # Close the browser session after scraping
-
-
-def init_driver():
-
-    # Set up headless Chrome options
-    chrome_options = Options()
-
-    chrome_options.add_argument("--headless=new")  # Improved headless support
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--disable-gpu")  # Disable GPU acceleration (macOS-specific issue)
-    chrome_options.add_argument("--no-sandbox")  # Bypass sandbox issues
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Avoid memory overflow errors
-    chrome_options.add_argument("--window-size=1280,1024")  # Ensure screen dimensions
-    chrome_options.add_argument("--enable-websocket-over-http2")
-    chrome_options.add_argument(
-        "--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.6998.165 Safari/537.36")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option("useAutomationExtension", False)
-    # chrome_options.add_argument("--disable-software-rasterizer")  # Force CPU rasterizer
-    # chrome_options.add_argument("--enable-logging")  # Enable verbose logs
-    # chrome_options.add_argument("--log-level=0")  # Max log level for diagnostics
-
-    # Force installation of the closest compatible driver
-    service = Service(ChromeDriverManager(driver_version="134.0.6998.165").install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-
-    return driver
 
 
 if False:
@@ -561,8 +406,7 @@ def main(config):
         mb_matcher.match_discogs_against_mb(config=config)
 
     elif args.scrape:
-        # scrape_discogs(config)
-        import_old_release_dates(config=config)
+        scraper.scrape_discogs(config)
 
     elif args.missing:
         missing(config=config)
