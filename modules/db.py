@@ -10,100 +10,89 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join("database", "discogs.db")
 
+CREATE_DISCOGS_RELEASES_TABLE = """
+    CREATE TABLE IF NOT EXISTS discogs_releases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        discogs_id INTEGER UNIQUE,
+        artist TEXT NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        barcodes TEXT,
+        catnos TEXT,
+        country TEXT,
+        format TEXT,
+        master_id INTEGER,
+        release_date TEXT,
+        sort_name TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+"""
 
-def get_connection(db_path=DB_PATH):
+CREATE_UPDATE_TRIGGER = """
+    CREATE TRIGGER IF NOT EXISTS update_discogs_releases_updatetime
+    BEFORE UPDATE
+        ON discogs_releases
+    BEGIN
+        UPDATE discogs_releases
+        SET updated_at = CURRENT_TIMESTAMP
+        WHERE id = OLD.id;
+    END;
+"""
+
+CREATE_MB_MATCHES_TABLE = """
+    CREATE TABLE IF NOT EXISTS mb_matches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        discogs_id INTEGER UNIQUE,
+        mbid TEXT,
+        artist TEXT,
+        title TEXT,
+        country TEXT,
+        format TEXT,
+        primary_type TEXT,
+        score INTEGER,
+        release_date TEXT,
+        sort_name SORT_NAME,
+        matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (discogs_id) REFERENCES discogs_releases (discogs_id)
+    );
+"""
+
+
+def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = namedtuple_factory
     return conn
 
 
-def initialize_db(db_path=DB_PATH):
+def initialize_db(db_path: str = DB_PATH) -> None:
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS discogs_releases (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            discogs_id INTEGER UNIQUE,
-            artist TEXT NOT NULL,
-            title TEXT NOT NULL,
-            year INTEGER,
-            barcodes TEXT,
-            catnos TEXT,
-            country TEXT,
-            format TEXT,
-            master_id INTEGER,
-            release_date TEXT,
-            sort_name TEXT,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
+    logger.info("Initializing the database...")
 
-    # SET updated_at = strftime('%Y-%m-%d %H:%M:%S:%s', 'now', 'localtime')
-
-    cursor.execute("""
-        CREATE TRIGGER IF NOT EXISTS update_discogs_releases_updatetime
-        BEFORE UPDATE
-            ON discogs_releases
-        BEGIN
-            UPDATE discogs_releases
-            SET updated_at = CURRENT_TIMESTAMP
-            WHERE id = OLD.id;
-        END;
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS mb_matches (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            discogs_id INTEGER UNIQUE,
-            mbid TEXT,
-            artist TEXT,
-            title TEXT,
-            country TEXT,
-            format TEXT,
-            primary_type TEXT,
-            score INTEGER,
-            release_date TEXT,
-            sort_name SORT_NAME,
-            matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (discogs_id) REFERENCES discogs_releases (discogs_id)
-        );
-    """)
-
-    # cursor.execute("""
-    #     CREATE TABLE IF NOT EXISTS release_dates (
-    #         id INTEGER PRIMARY KEY AUTOINCREMENT,
-    #         discogs_id INTEGER,
-    #         release_date TEXT,
-    #         sort_name TEXT,
-    #         score REAL,
-    #         matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    #         FOREIGN KEY (discogs_id) REFERENCES discogs_releases (discogs_id)
-    #     );
-    # """)
+    cursor.execute(CREATE_DISCOGS_RELEASES_TABLE)
+    cursor.execute(CREATE_UPDATE_TRIGGER)
+    cursor.execute(CREATE_MB_MATCHES_TABLE)
 
     conn.commit()
     conn.close()
 
 
 @contextmanager
-def context_manager(db_path=DB_PATH, read_only=False):
+def context_manager(db_path: str = DB_PATH, read_only: bool = False):
     """Wrapper to take care of committing and closing a database
 
     See https://stackoverflow.com/questions/67436362/decorator-for-sqlite3/67436763
     """
-    if read_only:
-        conn = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)
-    else:
-        conn = sqlite3.connect(db_path)
-    conn.row_factory = namedtuple_factory
-
     try:
+        conn = sqlite3.connect(f'file:{db_path}?mode=ro',
+                               uri=True) if read_only else sqlite3.connect(db_path)
+        conn.row_factory = namedtuple_factory
         cur = conn.cursor()
         yield cur
     except Exception as e:
-        # do something with exception
+        logger.error(f"Database error: {e}")
         conn.rollback()
         raise e
     else:
@@ -112,43 +101,33 @@ def context_manager(db_path=DB_PATH, read_only=False):
         conn.close()
 
 
-def namedtuple_factory(cursor, row):
-    fields = [column[0] for column in cursor.description]
-    cls = namedtuple("Row", fields)
-    return cls._make(row)
+def namedtuple_factory(cursor, row) -> namedtuple:
+    return namedtuple("Row", [column[0] for column in cursor.description])(*row)
 
 
-def row_change(release_id, data_name, data_to, data_from):
+def row_change(release_id: int, data_name: str, data_to: str, data_from: str) -> str:
     return f'💾 {data_name} set to {data_to} (was {data_from}) for release {release_id}'
 
 
-def row_ignore_change(release_id, data_name, data_to, data_from, reason):
+def row_ignore_change(release_id: int, data_name: str, data_to: str, data_from: str, reason: str) -> str:
     return f'⛔️ {reason} {data_name} not set to {data_to} (still {data_from}) for release {release_id}'
 
 
-def get_release_date_by_discogs_id(discogs_id, config):
-
+def get_release_date_by_discogs_id(discogs_id: int, config: str) -> str:
     with context_manager(config) as cur:
-        cur.execute('SELECT * FROM items WHERE release_id = ?', (int(discogs_id),))
+        cur.execute('SELECT * FROM items WHERE release_id = ?', (discogs_id,))
         row = cur.fetchone()
 
-    if row is None:
-        return row
-
-    return row.release_date
+    return row.release_date if row else None
 
 
-def fetch_row_by_mb_id(mb_id, config):
-
+def fetch_row_by_mb_id(mb_id: str, config: str) -> namedtuple:
     with context_manager(config) as cur:
         cur.execute('SELECT * FROM items WHERE mb_id = ?', (mb_id,))
-        row = cur.fetchone()
-
-    return row
+        return cur.fetchone()
 
 
-def db_summarise_row(id, config=None):
-
+def db_summarise_row(id: int, config: str = None) -> str:
     with context_manager() as cur:
         cur.execute("""
             SELECT *
@@ -156,24 +135,14 @@ def db_summarise_row(id, config=None):
             WHERE discogs_id = ?""", (id,))
         row = cur.fetchone()
 
-    output = []
-
-    output.append(f'release {id}')
-
-    artist = row.artist
-    if artist:
-        output.append(artist)
-
-    title = row.title
-    if title:
-        output.append(title)
-
-    release_date = row.release_date
-    if release_date:
-        output.append(str(release_date))
-
-    country = row.country
-    if country:
-        output.append(country)
+    output = [f'release {id}']
+    if row.artist:
+        output.append(row.artist)
+    if row.title:
+        output.append(row.title)
+    if row.release_date:
+        output.append(str(row.release_date))
+    if row.country:
+        output.append(row.country)
 
     return ' '.join(output)
