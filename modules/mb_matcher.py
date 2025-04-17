@@ -1427,7 +1427,7 @@ def mb_summarise_release_group(mb_release_group=None, mb_id=None):
     #     output.append(f'({len(release_list)} rel)')
     release_count = mb_release_group.get('release-count')
     if release_count:
-        output.append(f'({release_count} {'release' if release_count == 1 else 'releases'})')
+        output.append(f'({release_count} {"release" if release_count == 1 else "releases"})')
 
     first_release_date = mb_release_group.get('first-release-date')
     if first_release_date:
