@@ -205,81 +205,24 @@ def parse_date(date_str):
 
 
 def earliest_date(dt1_str, dt2_str):
-    """ Return the earlier of two dates
-
-        Given two date strings, return the earlier of the two. Dates
-        can be in the form YYYY-MM-DD, YYYY-MM or simply YY. The
-        comparison takes into account partial dates, so that 1982-04
-        is not considered earlier than 1982-04-10, but would be
-        considered earlier than 1982-05
-    """
-
-    if not dt1_str:
-        dt1_str = None
-    if not dt2_str:
-        dt2_str = None
-
-    if dt1_str == '0' or dt1_str == 'None':
-        dt1_str = None
-    if dt2_str == '0' or dt2_str == 'None':
-        dt2_str = None
-
-    if dt1_str and isinstance(dt1_str, int):
-        dt1_str = str(dt1_str)
-
-    if dt2_str and isinstance(dt2_str, int):
-        dt2_str = str(dt2_str)
+    def clean(d): return None if not d or d in ['0', 'None'] else str(d)
+    dt1_str, dt2_str = clean(dt1_str), clean(dt2_str)
 
     if dt1_str == dt2_str:
-        return dt1_str if dt1_str else None
+        return dt1_str
 
     dt1_obj = parse_date(dt1_str) if dt1_str else None
     dt2_obj = parse_date(dt2_str) if dt2_str else None
 
-    if dt1_obj is None and dt2_obj is None:
-        return None
-
-    if dt1_obj is not None and dt2_obj is None:
+    if not dt1_obj:
+        return dt2_str
+    if not dt2_obj:
         return dt1_str
 
-    if dt1_obj is None and dt2_obj is not None:
-        return dt2_str
+    t1 = (dt1_obj.year, dt1_obj.month or 0, dt1_obj.day or 0)
+    t2 = (dt2_obj.year, dt2_obj.month or 0, dt2_obj.day or 0)
 
-    if dt1_obj.year < dt2_obj.year:
-        return dt1_str
-
-    if dt1_obj.year > dt2_obj.year:
-        return dt2_str
-
-    # year is the same
-    # if one has a month and the other doesn't, it wins
-    if len(dt1_str) == 4 and len(dt2_str) >= 7:
-        return dt2_str
-
-    if len(dt1_str) >= 7 and len(dt2_str) == 4:
-        return dt1_str
-
-    if dt1_obj.month < dt2_obj.month:
-        return dt1_str
-
-    if dt1_obj.month > dt2_obj.month:
-        return dt2_str
-
-    # year and month are the same
-    # if one has a day and the other doesn't, it wins
-    if len(dt1_str) == 7 and len(dt2_str) == 10:
-        return dt2_str
-
-    if len(dt1_str) == 10 and len(dt2_str) == 7:
-        return dt1_str
-
-    if dt1_obj.day < dt2_obj.day:
-        return dt1_str
-
-    if dt1_obj.day > dt2_obj.day:
-        return dt2_str
-
-    return dt1_str
+    return dt1_str if t1 < t2 else dt2_str
 
 
 def pluralize(count, singular, plural=None):
@@ -292,110 +235,67 @@ def parse_and_humanize_date(ymd_date):
     if not ymd_date:
         return ''
 
-    if len(ymd_date) == 10:
-        # try day, month and year match first
-        formats = ["%Y-%m-%d"]
-        settings = {'REQUIRE_PARTS': ['day', 'month', 'year']}
-        date_object = dateparser.parse(ymd_date, date_formats=formats, settings=settings)
+    strategies = [
+        {"length": 10, "format": "%Y-%m-%d",
+            "parts": ['day', 'month', 'year'], "output": "%A %-d %B %Y"},
+        {"length": 7,  "format": "%Y-%m",    "parts": ['month', 'year'],        "output": "%B %Y"},
+        {"length": 4,  "format": "%Y",       "parts": ['year'],                 "output": "%Y"},
+    ]
 
-        if date_object:
-            return date_object.strftime('%A %-d %B %Y')
-
-    if len(ymd_date) == 7:
-        # try month and year
-        formats = ["%Y-%m"]
-        settings = {'REQUIRE_PARTS': ['month', 'year']}
-
-        date_object = dateparser.parse(ymd_date, date_formats=formats, settings=settings)
-
-        if date_object:
-            return date_object.strftime("%B %Y")
-
-    if len(ymd_date) == 4:
-        # try for just a year
-        formats = ["%Y"]
-        settings = {'REQUIRE_PARTS': ['year']}
-
-        date_object = dateparser.parse(ymd_date, date_formats=formats, settings=settings)
-
-        if date_object:
-            return date_object.strftime("%Y")
+    for strat in strategies:
+        if len(ymd_date) == strat["length"]:
+            settings = {"REQUIRE_PARTS": strat["parts"]}
+            date_object = dateparser.parse(ymd_date, date_formats=[
+                                           strat["format"]], settings=settings)
+            if date_object:
+                return date_object.strftime(strat["output"])
 
     return ''
 
 
-def humanize_date_delta(dt1, dt2=datetime.datetime.today().date()):
+def humanize_date_delta(dt1, dt2=datetime.date.today()):
+    def build_parts(rd, fields):
+        label_map = {
+            'years': 'year',
+            'months': 'month',
+            'days': 'day'
+        }
+        parts = []
+        for field in fields:
+            value = getattr(rd, field)
+            if value:
+                parts.append(pluralize(value, label_map[field]))
+        return parts
+
     date_formats = ['%Y-%m-%d', '%Y-%m', '%Y']
     settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first'}
 
-    dt2 = datetime.date.today().strftime('%Y-%m-%d')
-    dt2_object = dateparser.parse(dt2, date_formats=date_formats, settings=settings)
+    dt2_object = dt2
     dt1_object = dateparser.parse(dt1, date_formats=date_formats, settings=settings)
 
+    if not dt1_object:
+        return ''
+
+    dt1_object = dt1_object.date()
     rd = dateutil.relativedelta.relativedelta(dt2_object, dt1_object)
 
     if len(dt1) == 4:
-        # just the year
-        x = []
-
-        if rd.years:
-            x.append(pluralize(rd.years, 'year'))
-
-        xl = len(x)
-        if xl == 1:
-            xd = x[0]
-        else:
-            x2 = x.pop()
-            xd = ', '.join(x)
-            xd += ' and ' + x2
-
-        xd += ' ago this year'
-
+        parts = build_parts(rd, ['years'])
+        suffix = 'ago this year'
     elif len(dt1) == 7:
-        # just the year and month
-
-        x = []
-
-        if rd.years:
-            x.append(pluralize(rd.years, 'year'))
-
-        if rd.months:
-            x.append(pluralize(rd.months, 'month'))
-
-        xl = len(x)
-        if xl == 1:
-            xd = x[0]
-        else:
-            x2 = x.pop()
-            xd = ', '.join(x)
-            xd += ' and ' + x2
-
-        xd += ' ago this month'
-
+        parts = build_parts(rd, ['years', 'months'])
+        suffix = 'ago this month'
     else:
+        parts = build_parts(rd, ['years', 'months', 'days'])
+        suffix = 'ago today'
 
-        x = []
+    if not parts:
+        return f'just now ({suffix})'
 
-        if rd.years:
-            x.append(pluralize(rd.years, 'year'))
-
-        if rd.months:
-            x.append(pluralize(rd.months, 'month'))
-
-        if rd.days:
-            x.append(pluralize(rd.days, 'day'))
-
-        xl = len(x)
-        if xl == 1:
-            xd = x[0]
-        else:
-            x2 = x.pop()
-            xd = ', '.join(x)
-            xd += ' and ' + x2
-
-        xd += ' ago today'
-
-    return xd
+    if len(parts) == 1:
+        return f"{parts[0]} {suffix}"
+    else:
+        return f"{', '.join(parts[:-1])} and {parts[-1]} {suffix}"
 
 
 def is_today_anniversary(date_str):
