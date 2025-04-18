@@ -1,5 +1,6 @@
 import logging
 from modules import db, db_discogs, discogs_importer, utils
+from modules import config
 
 
 def fls(data_str, length):
@@ -9,7 +10,7 @@ def fls(data_str, length):
         return data_str.ljust(length)
 
 
-def missing(config):
+def missing(config: config.AppConfig):
 
     with db.context_manager() as cur:
 
@@ -90,7 +91,7 @@ def missing(config):
         print()
 
 
-def match(config):
+def match(config: config.AppConfig):
 
     with db.context_manager() as cur:
 
@@ -155,7 +156,7 @@ def match(config):
                         f'{row.discogs_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
 
 
-def status(config):
+def status(config: config.AppConfig):
 
     def output_nvp(label, value):
         print(f'{fls(label, 45)}: {value}')
@@ -284,7 +285,7 @@ def random_selection():
         print()
 
 
-def on_this_day(today_str='', config=None):
+def on_this_day(today_str='', config: config.AppConfig = None):
 
     with db.context_manager() as cur:
 

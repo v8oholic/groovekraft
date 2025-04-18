@@ -76,7 +76,7 @@ def import_old_release_dates(config=None):
             db_discogs.set_release_date(row.discogs_id, old_item.release_date, True)
 
 
-def main(config):
+def main(config: AppConfig):
 
     db.initialize_db()
 
