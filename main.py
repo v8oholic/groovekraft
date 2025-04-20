@@ -142,6 +142,7 @@ if __name__ == "__main__":
     scope_group.add_argument('--begin', type=int, required=False, default=0, help='begin at discogs_id')
     scope_group.add_argument('--id', type=int, required=False, default=0, help='only a specific Discogs id')
     scope_group.add_argument('--unmatched', required=False, action='store_true', help='only unmatched items')
+    scope_group.add_argument('--undated', required=False, action='store_true', help='only items without a full release date')
     scope_group.add_argument('--format', required=False, help='find matching format')
     # scope_group.add_argument('--all', required=False, action='store_true', dest="all_items", help='all items')
     # scope_group.add_argument('--discogs_id', required=False, help='restrict init or update to a specific Discogs id')

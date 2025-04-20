@@ -307,6 +307,15 @@ def is_today_anniversary(date_str):
     return dt1.month == dt2.month and dt1.day == dt2.day
 
 
+def is_month_anniversary(date_str: str) -> bool:
+    # Parse the input date (expects format YYYY-MM-DD)
+    dt1 = datetime.datetime.strptime(date_str, "%Y-%m").date()
+    dt2 = datetime.datetime.today().date()
+
+    # Compare month (ignore year)
+    return dt1.month == dt2.month
+
+
 def summarise_release(
     discogs_id=None,
     artist=None,

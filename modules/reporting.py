@@ -1,5 +1,5 @@
 import logging
-from modules import db, db_discogs, discogs_importer, utils
+from modules import db, discogs_importer, utils
 from modules import config
 
 
@@ -111,12 +111,16 @@ def list(config: config.AppConfig, order_by_date: bool = False):
         query.append('FROM discogs_releases d')
         query.append('LEFT JOIN mb_matches m USING(discogs_id)')
         query.append('WHERE TRUE')
-        if find_string:
-            query.append(f'AND (d.artist LIKE "%{find_string}%"')
-            query.append(f'OR d.title LIKE "%{find_string}%"')
-            query.append(f'OR d.sort_name LIKE "%{find_string}%")')
-        if format_string:
-            query.append(f'AND d.format LIKE "%{format_string}%"')
+        if config.find:
+            query.append(f'AND (d.artist LIKE "%{config.find}%"')
+            query.append(f'OR d.title LIKE "%{config.find}%"')
+            query.append(f'OR d.sort_name LIKE "%{config.find}%")')
+        if config.format:
+            query.append(f'AND d.format LIKE "%{config.format}%"')
+        if config.undated:
+            query.append(f'AND length(d.release_date) < 10')
+        if config.unmatched:
+            query.append(f'AND m.mbid IS NULL')
         if order_by_date:
             query.append('ORDER BY d.release_date, d.sort_name, d.title, d.discogs_id')
         else:
@@ -324,28 +328,50 @@ def on_this_day(today_str='', config: config.AppConfig = None):
 
     with db.context_manager() as cur:
 
-        cur.execute("""
-            SELECT *
-            FROM discogs_releases
-            WHERE release_date IS NOT NULL
-            ORDER BY artist, release_date, title, discogs_id
-        """)
+        query = []
 
-        rows = cur.fetchall()
+        query.append('SELECT d.sort_name AS artist, d.title, d.format, d.release_date, d.discogs_id')
+        query.append('FROM discogs_releases d')
+        query.append('LEFT JOIN mb_matches m USING(discogs_id)')
+        query.append('WHERE d.release_date IS NOT NULL')
+        if config.find:
+            query.append(f'AND (d.artist LIKE "%{config.find}%"')
+            query.append(f'OR d.title LIKE "%{config.find}%"')
+            query.append(f'OR d.sort_name LIKE "%{config.find}%")')
+        if config.format:
+            query.append(f'AND d.format LIKE "%{config.format}%"')
+        query.append(
+            'ORDER BY length(d.release_date) DESC, d.release_date, d.sort_name, d.title, d.discogs_id')
 
-        # print(f'{len(rows)} rows')
+        cur.execute(' '.join(query))
 
-        for row in rows:
+        items = cur.fetchall()
 
-            if row.release_date and len(row.release_date) == 10:
+        include_count = 0
+
+        for item in items:
+
+            if item.release_date and len(item.release_date) == 10:
                 if today_str:
-                    if not utils.is_today_anniversary(row.release_date, today_str):
-                        continue
-
+                    include = utils.is_today_anniversary(item.release_date, today_str)
                 else:
-                    if not utils.is_today_anniversary(row.release_date):
-                        continue
+                    include = utils.is_today_anniversary(item.release_date)
+
+            elif item.release_date and len(item.release_date) == 7:
+                if today_str:
+                    include = utils.is_month_anniversary(item.release_date, today_str)
+                else:
+                    include = utils.is_month_anniversary(item.release_date)
+            else:
+                include = False
+
+            if include:
+                include_count += 1
 
                 print()
-                output_row(row)
+                output_row(item)
                 print()
+
+        print()
+        print(f'{include_count} items')
+        print()

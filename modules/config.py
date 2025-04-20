@@ -17,6 +17,7 @@ class AppConfig:
         self.begin = args.begin
         self.id = args.id
         self.unmatched = args.unmatched
+        self.undated = args.undated
 
         self.verbose = args.verbose
 
