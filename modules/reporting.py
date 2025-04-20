@@ -16,12 +16,17 @@ def missing(config: config.AppConfig):
 
         # LEFT JOIN mb_matches m ON d.discogs_id = m.discogs_id
 
+        print()
+        print('Items in Discogs collection which have no MusicBrainz match')
+        print('-----------------------------------------------------------')
+
         # construct query
         query = []
 
         find_string = config.find
+        format_string = config.format
 
-        query.append('SELECT d.artist, d.title, d.format, d.release_date, d.discogs_id')
+        query.append('SELECT d.sort_name, d.title, d.format, d.release_date, d.discogs_id')
         query.append('FROM discogs_releases d')
         query.append('LEFT JOIN mb_matches m USING(discogs_id)')
         query.append('WHERE m.mbid IS NULL')
@@ -29,7 +34,9 @@ def missing(config: config.AppConfig):
             query.append(f'AND (d.artist LIKE "%{find_string}%"')
             query.append(f'OR d.title LIKE "%{find_string}%"')
             query.append(f'OR d.sort_name LIKE "%{find_string}%")')
-        query.append('ORDER BY d.artist, d.release_date, d.title, d.discogs_id')
+        if format_string:
+            query.append(f'AND d.format LIKE "%{format_string}%"')
+        query.append('ORDER BY d.sort_name, d.release_date, d.title, d.discogs_id')
 
         query_string = ' '.join(query)
 
@@ -60,7 +67,7 @@ def missing(config: config.AppConfig):
 
             for row in rows:
 
-                artist = row.artist
+                artist = row.sort_name
                 title = row.title
 
                 format = row.format.split(',')[0] if row.format else ''
@@ -91,21 +98,34 @@ def missing(config: config.AppConfig):
         print()
 
 
-def match(config: config.AppConfig):
+def list(config: config.AppConfig, order_by_date: bool = False):
 
     with db.context_manager() as cur:
 
-        cur.execute(f"""
-            SELECT *
-            FROM discogs_releases
-            WHERE artist LIKE '%{config.match}%'
-            OR title LIKE '%{config.match}%'
-            OR sort_name LIKE '%{config.match}%'
-            ORDER BY artist, release_date, title, discogs_id
-        """)
+        find_string = config.find
+        format_string = config.format
 
-        rows = cur.fetchall()
-        if len(rows) == 0:
+        query = []
+
+        query.append('SELECT d.sort_name AS artist, d.title, d.format, d.release_date, d.discogs_id')
+        query.append('FROM discogs_releases d')
+        query.append('LEFT JOIN mb_matches m USING(discogs_id)')
+        query.append('WHERE TRUE')
+        if find_string:
+            query.append(f'AND (d.artist LIKE "%{find_string}%"')
+            query.append(f'OR d.title LIKE "%{find_string}%"')
+            query.append(f'OR d.sort_name LIKE "%{find_string}%")')
+        if format_string:
+            query.append(f'AND d.format LIKE "%{format_string}%"')
+        if order_by_date:
+            query.append('ORDER BY d.release_date, d.sort_name, d.title, d.discogs_id')
+        else:
+            query.append('ORDER BY d.sort_name, d.release_date, d.title, d.discogs_id')
+
+        cur.execute(' '.join(query))
+
+        items = cur.fetchall()
+        if len(items) == 0:
             print('no matching items')
             return
 
@@ -127,13 +147,13 @@ def match(config: config.AppConfig):
             else:
                 title_len = min(title_len, max_title_len)
 
-            for row in rows:
+            for item in items:
 
-                artist = row.artist
-                title = row.title
+                artist = item.artist
+                title = item.title
 
-                format = row.format.split(',')[0] if row.format else ''
-                release_date = row.release_date if row.release_date else ''
+                format = item.format.split(',')[0] if item.format else ''
+                release_date = item.release_date if item.release_date else ''
 
                 if p == 0:
                     artist_len = max(artist_len, len(artist))
@@ -149,12 +169,16 @@ def match(config: config.AppConfig):
                     if artist != last_artist:
                         last_artist = artist
                         print()
-                        artist_caption = f'{artist} ({len(rows)} items)'
+                        artist_caption = f'{artist}'
                         print(artist_caption)
                         print('='*len(artist_caption))
 
                     print(
-                        f'{row.discogs_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+                        f'{item.discogs_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
+
+    print()
+    print(f'{len(items)} items')
+    print()
 
 
 def status(config: config.AppConfig):
@@ -266,23 +290,33 @@ def output_row(row):
         print(f'release_date    : {utils.parse_and_humanize_date(row.release_date)}')
 
 
-def random_selection():
+def random_selection(config: config.AppConfig):
 
     with db.context_manager() as cur:
 
-        cur.execute("""
-            SELECT *
-            FROM discogs_releases
-            ORDER BY RANDOM()
-            LIMIT 1
-        """)
+        query = []
 
-        row = cur.fetchone()
+        query.append('SELECT d.sort_name AS artist, d.title, d.format, d.release_date, d.discogs_id')
+        query.append('FROM discogs_releases d')
+        query.append('LEFT JOIN mb_matches m USING(discogs_id)')
+        query.append('WHERE TRUE')
+        if config.find:
+            query.append(f'AND (d.artist LIKE "%{config.find}%"')
+            query.append(f'OR d.title LIKE "%{config.find}%"')
+            query.append(f'OR d.sort_name LIKE "%{config.find}%")')
+        if config.format:
+            query.append(f'AND d.format LIKE "%{config.format}%"')
+        query.append('ORDER BY RANDOM()')
+        query.append('LIMIT 1')
+
+        cur.execute(' '.join(query))
+
+        item = cur.fetchone()
 
         print()
         print('random selection:')
         print()
-        output_row(row)
+        output_row(item)
         print()
 
 

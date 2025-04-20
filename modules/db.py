@@ -23,7 +23,7 @@ CREATE_DISCOGS_RELEASES_TABLE = """
         format TEXT,
         master_id INTEGER,
         release_date TEXT,
-        sort_name TEXT,
+        sort_name TEXT COLLATE NOCASE,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 """

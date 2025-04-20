@@ -98,11 +98,14 @@ def main(config: AppConfig):
     elif args.missing:
         reporting.missing(config=config)
 
-    elif args.match:
-        reporting.match(config=config)
+    elif args.list_by_date:
+        reporting.list(config=config, order_by_date=False)
+
+    elif args.list_by_name:
+        reporting.list(config=config, order_by_date=True)
 
     elif args.random:
-        reporting.random_selection()
+        reporting.random_selection(config=config)
 
     elif args.onthisday:
         reporting.on_this_day(config=config)
@@ -130,7 +133,8 @@ if __name__ == "__main__":
     main_group.add_argument('--onthisday', '--on-this-day', required=False, action='store_true', help='display any release anniversaries')
     main_group.add_argument('--random', required=False, action='store_true', help='generate random selection')
     main_group.add_argument('--missing', required=False, action='store_true', help='show unmatched releases')
-    main_group.add_argument('--match', required=False, help='find matching text in database')
+    main_group.add_argument('--list-by-name', required=False, action='store_true', help='list items by artist name')
+    main_group.add_argument('--list-by-date', required=False, action='store_true', help='list items by release date')
     main_group.add_argument('--status', required=False, action='store_true', help='report status of database')
 
     scope_group = parser.add_mutually_exclusive_group(required=False)
@@ -138,6 +142,7 @@ if __name__ == "__main__":
     scope_group.add_argument('--begin', type=int, required=False, default=0, help='begin at discogs_id')
     scope_group.add_argument('--id', type=int, required=False, default=0, help='only a specific Discogs id')
     scope_group.add_argument('--unmatched', required=False, action='store_true', help='only unmatched items')
+    scope_group.add_argument('--format', required=False, help='find matching format')
     # scope_group.add_argument('--all', required=False, action='store_true', dest="all_items", help='all items')
     # scope_group.add_argument('--discogs_id', required=False, help='restrict init or update to a specific Discogs id')
     # scope_group.add_argument('--mbid', required=False, help='restrict init or update to a specific MusicBrainz id')

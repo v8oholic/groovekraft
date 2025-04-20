@@ -11,8 +11,8 @@ class AppConfig:
         # self.new_items = args.new_items
         # self.reset = args.reset
         self.missing = args.missing
-        self.match = args.match
         self.find = args.find
+        self.format = args.format
 
         self.begin = args.begin
         self.id = args.id
