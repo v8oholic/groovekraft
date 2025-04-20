@@ -149,8 +149,9 @@ def match(config: config.AppConfig):
                     if artist != last_artist:
                         last_artist = artist
                         print()
-                        print(artist)
-                        print('='*len(artist))
+                        artist_caption = f'{artist} ({len(rows)} items)'
+                        print(artist_caption)
+                        print('='*len(artist_caption))
 
                     print(
                         f'{row.discogs_id:>8} {fls(title, title_len)} {fls(format, format_len)} {fls(release_date, release_date_len)}')
