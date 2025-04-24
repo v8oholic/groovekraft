@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem
-from PyQt6.QtWidgets import QLineEdit, QHBoxLayout
+from PyQt6.QtWidgets import QLineEdit, QHBoxLayout, QPushButton
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import Qt
 
@@ -7,6 +7,29 @@ from modules import db, utils
 
 import sys
 from modules.config import AppConfig
+
+
+class ReleaseDetailWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.labels = {}
+        layout = QVBoxLayout(self)
+
+        for field in ['Artist', 'Title', 'Format', 'Country', 'Release Date',
+                      'Discogs Id', 'Catalog Numbers', 'Barcodes', 'Matched']:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(f"{field}:"))
+            label = QLabel()
+            row.addWidget(label)
+            layout.addLayout(row)
+            self.labels[field] = label
+
+    def update_data(self, data: dict):
+        for key, value in data.items():
+            if key == 'Matched':
+                self.labels[key].setText("Yes" if value else "No")
+            else:
+                self.labels[key].setText(str(value))
 
 
 class CollectionViewer(QMainWindow):
@@ -20,6 +43,8 @@ class CollectionViewer(QMainWindow):
         tab_widget.addTab(on_this_day_tab, "On this day")
         collection_tab = self.create_collection_tab()
         tab_widget.addTab(collection_tab, "Collection")
+        randomiser_tab = self.create_randomiser_tab()
+        tab_widget.addTab(randomiser_tab, "Randomiser")
         self.setCentralWidget(tab_widget)
         esc_shortcut = QShortcut(QKeySequence("Escape"), self)
         esc_shortcut.activated.connect(self.close)
@@ -121,6 +146,9 @@ class CollectionViewer(QMainWindow):
         format_input = QLineEdit()
         filter_layout.addWidget(format_input)
 
+        clear_button = QPushButton("Clear Filters")
+        filter_layout.addWidget(clear_button)
+
         # Table
         table = QTableWidget()
         main_layout.addWidget(table)
@@ -129,7 +157,7 @@ class CollectionViewer(QMainWindow):
             with db.context_manager() as cur:
                 query = []
                 query.append(
-                    "SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id, m.mbid")
+                    "SELECT d.sort_name, d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, m.mbid")
                 query.append("FROM discogs_releases d")
                 query.append("LEFT JOIN mb_matches m USING(discogs_id)")
                 filters = []
@@ -153,7 +181,7 @@ class CollectionViewer(QMainWindow):
                 ['Artist', 'Title', 'Format', 'Country', 'Release Date', 'Discogs Id', 'Matched'])
             table.setRowCount(len(rows))
 
-            for row_idx, (artist, title, format, country, release_date, discogs_id, mbid) in enumerate(rows):
+            for row_idx, (sort_name, artist, title, format, country, release_date, discogs_id, mbid) in enumerate(rows):
                 table.setItem(row_idx, 0, QTableWidgetItem(artist))
                 table.setItem(row_idx, 1, QTableWidgetItem(title))
                 table.setItem(row_idx, 2, QTableWidgetItem(format))
@@ -171,7 +199,41 @@ class CollectionViewer(QMainWindow):
         title_input.textChanged.connect(populate_table)
         format_input.textChanged.connect(populate_table)
 
+        def clear_filters():
+            artist_input.clear()
+            title_input.clear()
+            format_input.clear()
+
+        clear_button.clicked.connect(clear_filters)
+
         populate_table()
+        return widget
+
+    def create_randomiser_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        self.detail_widget = ReleaseDetailWidget()
+        layout.addWidget(self.detail_widget)
+
+        def load_random_item():
+            with db.context_manager() as cur:
+                cur.execute(
+                    "SELECT d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, d.catnos, d.barcodes, m.mbid "
+                    "FROM discogs_releases d "
+                    "LEFT JOIN mb_matches m USING(discogs_id) "
+                    "ORDER BY RANDOM() LIMIT 1")
+                row = cur.fetchone()
+                if row:
+                    data = dict(zip(self.detail_widget.labels.keys(), row))
+                    self.detail_widget.update_data(data)
+
+        random_button = QPushButton("Random")
+        random_button.clicked.connect(load_random_item)
+        layout.addWidget(random_button)
+
+        load_random_item()
+
         return widget
 
 
