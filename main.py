@@ -17,6 +17,7 @@ from modules import db
 from modules import scraper
 from modules import reporting
 from modules.config import AppConfig
+from modules.gui import run_gui
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ if __name__ == "__main__":
 
     # autopep8: off
     parser.add_argument('--init', required=False, action='store_true', help='initialise database')
+    parser.add_argument('--gui', required=False, action='store_true', help='launch experimental PyQt6 GUI')
 
     main_group = parser.add_mutually_exclusive_group(required=False)
     main_group.add_argument('--import', required=False, action='store_true', dest='import_items', help='import items from Discogs')
@@ -160,7 +162,11 @@ if __name__ == "__main__":
     config = AppConfig(args)
     config.load_from_config_parser(config_parser)
 
+    if args.gui:
+        run_gui(config)
+
     # args2 = vars(args)
     # print(args2)
+    else:
 
-    main(config)
+        main(config)
