@@ -125,69 +125,53 @@ class CollectionViewer(QMainWindow):
         table = QTableWidget()
         main_layout.addWidget(table)
 
-        with db.context_manager() as cur:
+        def populate_table():
+            with db.context_manager() as cur:
+                query = []
+                query.append(
+                    "SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id, m.mbid")
+                query.append("FROM discogs_releases d")
+                query.append("LEFT JOIN mb_matches m USING(discogs_id)")
+                filters = []
 
-            query = []
-
-            query.append(
-                'SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id, m.mbid')
-            query.append('FROM discogs_releases d')
-            query.append('LEFT JOIN mb_matches m USING(discogs_id)')
-            if artist_input.text or title_input.text or format_input.text:
-                first_item = True
-
-                query.append('WHERE d.release_date IS NOT NULL')
                 if artist_input.text():
-
-                    if first_item:
-                        query.append(f'WHERE d.artist LIKE "%{artist_input.text()}%"')
-                        first_item = False
-                    else:
-                        query.append(f'AND (d.artist LIKE "%{artist_input.text()}%"')
-
+                    filters.append(f'd.sort_name LIKE "%{artist_input.text()}%"')
                 if title_input.text():
-
-                    if first_item:
-                        query.append(f'WHERE d.title LIKE "%{title_input.text()}%"')
-                        first_item = False
-                    else:
-                        query.append(f'AND (d.title LIKE "%{title_input.text()}%"')
-
+                    filters.append(f'd.title LIKE "%{title_input.text()}%"')
                 if format_input.text():
+                    filters.append(f'd.format LIKE "%{format_input.text()}%"')
 
-                    if first_item:
-                        query.append(f'WHERE d.format LIKE "%{format_input.text()}%"')
-                        first_item = False
-                    else:
-                        query.append(f'AND d.format LIKE "%{format_input.text()}%"')
+                if filters:
+                    query.append("WHERE " + " AND ".join(filters))
 
-            query.append(
-                'ORDER BY d.sort_name, d.release_date, d.title, d.discogs_id')
+                query.append("ORDER BY d.sort_name, d.release_date, d.title, d.discogs_id")
+                cur.execute(' '.join(query))
+                rows = cur.fetchall()
 
-            print(query)
-            cur.execute(' '.join(query))
+            table.setColumnCount(7)
+            table.setHorizontalHeaderLabels(
+                ['Artist', 'Title', 'Format', 'Country', 'Release Date', 'Discogs Id', 'Matched'])
+            table.setRowCount(len(rows))
 
-            rows = cur.fetchall()
+            for row_idx, (artist, title, format, country, release_date, discogs_id, mbid) in enumerate(rows):
+                table.setItem(row_idx, 0, QTableWidgetItem(artist))
+                table.setItem(row_idx, 1, QTableWidgetItem(title))
+                table.setItem(row_idx, 2, QTableWidgetItem(format))
+                table.setItem(row_idx, 3, QTableWidgetItem(country))
+                table.setItem(row_idx, 4, QTableWidgetItem(release_date))
+                table.setItem(row_idx, 5, QTableWidgetItem(str(discogs_id)))
+                table.item(row_idx, 5).setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                table.setItem(row_idx, 6, QTableWidgetItem("Yes" if mbid else "No"))
 
-        table.setColumnCount(7)
-        table.setHorizontalHeaderLabels(
-            ['Artist', 'Title', 'Format', 'Country', 'Release Date', 'Discogs Id', 'Matched'])
-        table.setRowCount(len(rows))
+            table.resizeColumnsToContents()
 
-        for row_idx, (artist, title, format, country, release_date, discogs_id, mbid) in enumerate(rows):
-            table.setItem(row_idx, 0, QTableWidgetItem(artist))
-            table.setItem(row_idx, 1, QTableWidgetItem(title))
-            table.setItem(row_idx, 2, QTableWidgetItem(format))
-            table.setItem(row_idx, 3, QTableWidgetItem(country))
-            table.setItem(row_idx, 4, QTableWidgetItem(release_date))
-            table.setItem(row_idx, 5, QTableWidgetItem(str(discogs_id)))
-            table.item(row_idx, 5).setTextAlignment(
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        # Connect filter changes to repopulate the table
+        artist_input.textChanged.connect(populate_table)
+        title_input.textChanged.connect(populate_table)
+        format_input.textChanged.connect(populate_table)
 
-            matched_item = QTableWidgetItem("Yes" if mbid else "No")
-            table.setItem(row_idx, 6, matched_item)
-
-        table.resizeColumnsToContents()
+        populate_table()
         return widget
 
 
