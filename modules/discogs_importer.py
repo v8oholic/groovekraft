@@ -11,6 +11,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+DISCOGS_CONSUMER_KEY = 'yEJrrZEZrExGHEPjNQca'
+DISCOGS_CONSUMER_SECRET = 'isFjruJTfmmXFXiaywRqCUSkIGwHlHKn'
+
 
 def connect_to_discogs(config):
 
