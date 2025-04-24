@@ -1,5 +1,7 @@
-from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem
-from PyQt6.QtWidgets import QLineEdit, QHBoxLayout, QPushButton
+from PyQt6.QtWidgets import (
+    QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem,
+    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox
+)
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import Qt
 
@@ -13,16 +15,29 @@ class ReleaseDetailWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.labels = {}
-        layout = QVBoxLayout(self)
+
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(10, 10, 10, 10)
+
+        group = QGroupBox("Release Details")
+        form = QFormLayout()
+        form.setHorizontalSpacing(20)
+        form.setVerticalSpacing(10)
+        group.setLayout(form)
+        outer_layout.addWidget(group)
 
         for field in ['Artist', 'Title', 'Format', 'Country', 'Release Date',
                       'Discogs Id', 'Catalog Numbers', 'Barcodes', 'Matched']:
-            row = QHBoxLayout()
-            row.addWidget(QLabel(f"{field}:"))
-            label = QLabel()
-            row.addWidget(label)
-            layout.addLayout(row)
-            self.labels[field] = label
+            label_widget = QLabel(f"{field}:")
+            font = label_widget.font()
+            font.setBold(True)
+            label_widget.setFont(font)
+
+            value_label = QLabel()
+            value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+            self.labels[field] = value_label
+            form.addRow(label_widget, value_label)
 
     def update_data(self, data: dict):
         for key, value in data.items():
@@ -228,7 +243,7 @@ class CollectionViewer(QMainWindow):
                     data = dict(zip(self.detail_widget.labels.keys(), row))
                     self.detail_widget.update_data(data)
 
-        random_button = QPushButton("Random")
+        random_button = QPushButton("Randomise")
         random_button.clicked.connect(load_random_item)
         layout.addWidget(random_button)
 
