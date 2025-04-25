@@ -57,6 +57,14 @@ CREATE_MB_MATCHES_TABLE = """
     );
 """
 
+CREATE_DISCOGS_OAUTH_TABLE = """
+    CREATE TABLE IF NOT EXISTS discogs_oauth (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        oauth_token TEXT,
+        oauth_token_secret TEXT
+    );
+"""
+
 
 def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
@@ -74,6 +82,7 @@ def initialize_db(db_path: str = DB_PATH) -> None:
     cursor.execute(CREATE_DISCOGS_RELEASES_TABLE)
     cursor.execute(CREATE_UPDATE_TRIGGER)
     cursor.execute(CREATE_MB_MATCHES_TABLE)
+    cursor.execute(CREATE_DISCOGS_OAUTH_TABLE)
 
     conn.commit()
     conn.close()

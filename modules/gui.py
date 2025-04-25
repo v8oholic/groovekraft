@@ -4,8 +4,10 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
 from modules import db, utils
+from modules import discogs_importer
 
 import sys
 from modules.config import AppConfig
@@ -48,6 +50,33 @@ class ReleaseDetailWidget(QWidget):
 
 
 class CollectionViewer(QMainWindow):
+    class DiscogsImportWorker(QObject):
+        progress_msg = pyqtSignal(str)
+        finished = pyqtSignal()
+
+        def __init__(self, client):
+            super().__init__()
+            self.client = client
+            self._cancel_requested = False
+
+        def cancel(self):
+            self._cancel_requested = True
+
+        def run(self):
+            def emit_msg(msg):
+                self.progress_msg.emit(msg)
+
+            from modules import discogs_importer
+            try:
+                discogs_importer.import_from_discogs(
+                    discogs_client=self.client,
+                    callback=emit_msg,
+                    should_cancel=lambda: self._cancel_requested
+                )
+            except Exception as e:
+                self.progress_msg.emit(f"Error: {e}")
+            self.finished.emit()
+
     def __init__(self, cfg: AppConfig):
         super().__init__()
         self.setWindowTitle("Collection Viewer")
@@ -60,6 +89,8 @@ class CollectionViewer(QMainWindow):
         tab_widget.addTab(collection_tab, "Collection")
         randomiser_tab = self.create_randomiser_tab()
         tab_widget.addTab(randomiser_tab, "Randomiser")
+        importer_tab = self.create_discogs_importer_tab()
+        tab_widget.addTab(importer_tab, "Discogs Importer")
         self.setCentralWidget(tab_widget)
         esc_shortcut = QShortcut(QKeySequence("Escape"), self)
         esc_shortcut.activated.connect(self.close)
@@ -249,6 +280,51 @@ class CollectionViewer(QMainWindow):
 
         load_random_item()
 
+        return widget
+
+    def create_discogs_importer_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        log_output = QTextEdit()
+        log_output.setReadOnly(True)
+        layout.addWidget(log_output)
+
+        import_button = QPushButton("Import from Discogs")
+        layout.addWidget(import_button)
+
+        def run_import():
+            try:
+                client, access_token, access_secret = discogs_importer.connect_to_discogs(self.cfg)
+            except Exception as e:
+                log_output.append(f"Authentication failed: {e}")
+                return
+
+            import_button.setText("Cancel Import")
+
+            self.thread = QThread()
+            worker = CollectionViewer.DiscogsImportWorker(client)
+            self.worker = worker  # keep reference
+            worker.moveToThread(self.thread)
+
+            worker.progress_msg.connect(lambda msg: log_output.append(msg))
+            worker.finished.connect(lambda: import_button.setText("Import from Discogs"))
+            worker.finished.connect(self.thread.quit)
+            worker.finished.connect(worker.deleteLater)
+            self.thread.finished.connect(self.thread.deleteLater)
+
+            self.thread.started.connect(worker.run)
+            self.thread.start()
+
+        def on_import_button_clicked():
+            if import_button.text() == "Import from Discogs":
+                run_import()
+            else:
+                if self.worker:
+                    self.worker.cancel()
+                    log_output.append("Cancelling import...")
+
+        import_button.clicked.connect(on_import_button_clicked)
         return widget
 
 

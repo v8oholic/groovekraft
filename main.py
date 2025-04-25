@@ -162,6 +162,8 @@ if __name__ == "__main__":
     config = AppConfig(args)
     config.load_from_config_parser(config_parser)
 
+    db.initialize_db()
+
     if args.gui:
         run_gui(config)
 

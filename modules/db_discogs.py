@@ -1,7 +1,12 @@
 from modules import db
 
+import logging
 
-def update_field_if_changed(discogs_id, field_name, new_value):
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+
+
+def update_field_if_changed(discogs_id, field_name, new_value, callback=print):
     with db.context_manager() as cur:
         cur.execute(f"""
             SELECT {field_name}
@@ -15,46 +20,46 @@ def update_field_if_changed(discogs_id, field_name, new_value):
         if old_value == new_value:
             return
 
-        print(db.row_change(discogs_id, field_name, new_value, old_value))
+        callback(db.row_change(discogs_id, field_name, new_value, old_value))
         cur.execute(f"""
             UPDATE discogs_releases
             SET {field_name} = ?
             WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def set_artist(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'artist', new_value)
+def set_artist(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'artist', new_value, callback)
 
 
-def set_title(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'title', new_value)
+def set_title(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'title', new_value, callback)
 
 
-def set_format(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'format', new_value)
+def set_format(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'format', new_value, callback)
 
 
-def set_country(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'country', new_value)
+def set_country(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'country', new_value, callback)
 
 
-def set_barcodes(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'barcodes', new_value)
+def set_barcodes(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'barcodes', new_value, callback)
 
 
-def set_catnos(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'catnos', new_value)
+def set_catnos(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'catnos', new_value, callback)
 
 
-def set_year(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'year', new_value)
+def set_year(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'year', new_value, callback)
 
 
-def set_master_id(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'master_id', new_value)
+def set_master_id(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'master_id', new_value, callback)
 
 
-def set_release_date(discogs_id, new_value, force=False):
+def set_release_date(discogs_id, new_value, force=False, callback=print):
     with db.context_manager() as cur:
         cur.execute("""
             SELECT release_date
@@ -70,14 +75,16 @@ def set_release_date(discogs_id, new_value, force=False):
 
         if not force:
             if old_value is not None and (new_value is None or len(new_value) < len(old_value)):
-                print(db.row_ignore_change(discogs_id, 'release_date', new_value, old_value, "shorter"))
+                logger.debug(db.row_ignore_change(
+                    discogs_id, 'release_date', new_value, old_value, "shorter"))
                 return
 
             if old_value is not None and old_value < new_value:
-                print(db.row_ignore_change(discogs_id, 'release_date', new_value, old_value, "newer"))
+                logger.debug(db.row_ignore_change(
+                    discogs_id, 'release_date', new_value, old_value, "newer"))
                 return
 
-        print(db.row_change(discogs_id, 'release_date', new_value, old_value))
+        callback(db.row_change(discogs_id, 'release_date', new_value, old_value))
 
         cur.execute("""
             UPDATE discogs_releases
@@ -158,4 +165,19 @@ def fetch_row_by_discogs_id(discogs_id):
         cur.execute('SELECT * FROM items WHERE release_id = ?', (discogs_id,))
         row = cur.fetchone()
 
+    return row
+
+
+# OAuth token management for Discogs
+def set_oauth_tokens(oauth_token, oauth_token_secret):
+    with db.context_manager() as cur:
+        cur.execute("DELETE FROM discogs_oauth")
+        cur.execute("INSERT INTO discogs_oauth (oauth_token, oauth_token_secret) VALUES (?, ?)",
+                    (oauth_token, oauth_token_secret))
+
+
+def get_oauth_tokens():
+    with db.context_manager() as cur:
+        cur.execute("SELECT oauth_token, oauth_token_secret FROM discogs_oauth LIMIT 1")
+        row = cur.fetchone()
     return row

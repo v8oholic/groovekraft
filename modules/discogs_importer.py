@@ -6,6 +6,7 @@ from discogs_client.exceptions import HTTPError
 
 from modules import db_discogs
 from modules import utils
+from modules.oauth_gui import prompt_oauth_verifier_gui
 
 import logging
 
@@ -17,19 +18,25 @@ DISCOGS_CONSUMER_SECRET = 'isFjruJTfmmXFXiaywRqCUSkIGwHlHKn'
 
 def connect_to_discogs(config):
 
+    token_row = db_discogs.get_oauth_tokens()
+    if token_row:
+        oauth_token, oauth_token_secret = token_row
+    else:
+        oauth_token = oauth_token_secret = None
+
     authenticated = False
 
-    if config.oauth_token and config.oauth_token_secret:
+    if oauth_token and oauth_token_secret:
         try:
             client = discogs_client.Client(
                 config.user_agent,
                 consumer_key=config.consumer_key,
                 consumer_secret=config.consumer_secret,
-                token=config.oauth_token,
-                secret=config.oauth_token_secret
+                token=oauth_token,
+                secret=oauth_token_secret
             )
-            access_token = config.oauth_token
-            access_secret = config.oauth_token_secret
+            access_token = oauth_token
+            access_secret = oauth_token_secret
             authenticated = True
 
         except HTTPError:
@@ -50,28 +57,15 @@ def connect_to_discogs(config):
         logger.debug(" == Request Token == ")
         logger.debug(f"    * oauth_token        = {token}")
         logger.debug(f"    * oauth_token_secret = {secret}")
-
-        # visit the URL in auth_url to allow the app to connect
-
-        print(f"Please browse to the following URL {url}")
-
-        accepted = "n"
-        while accepted.lower() == "n":
-            print()
-            accepted = input(f"Have you authorized me at {url} [y/n] :")
-
-        # note the token
-
-        # Waiting for user input. Here they must enter the verifier key that was
-        # provided at the unqiue URL generated above.
-        oauth_verifier = input("Verification code : ")
+        logger.debug(f"    * authorization URL  = {url}")
 
         try:
+            oauth_verifier = prompt_oauth_verifier_gui(url)
             access_token, access_secret = client.get_access_token(oauth_verifier)
+            db_discogs.set_oauth_tokens(access_token, access_secret)
             authenticated = True
-
-        except HTTPError:
-            raise Exception("Unable to authenticate to Discogs.")
+        except Exception as e:
+            raise Exception(f"Unable to authenticate to Discogs: {e}")
 
     return client, access_token, access_secret
 
@@ -142,28 +136,22 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
     return ' '.join(output)
 
 
-def import_from_discogs(config=None):
-
-    discogs_client, discogs_access_token, discogs_access_secret = connect_to_discogs(config)
+def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: False):
 
     # fetch the identity object for the current logged in user.
     discogs_user = discogs_client.identity()
 
-    logging.debug(" == User ==")
-    logging.debug(f"    * username           = {discogs_user.username}")
-    logging.debug(f"    * name               = {discogs_user.name}")
-    logging.debug(" == Access Token ==")
-    logging.debug(f"    * oauth_token        = {discogs_access_token}")
-    logging.debug(f"    * oauth_token_secret = {discogs_access_secret}")
-    logging.debug(" Authentication complete. Future requests will be signed with the above tokens.")
-
     releases = discogs_user.collection_folders[0].releases
-    print(f'number of items in all collections: {len(releases)}')
+    callback(f'number of items in all collections: {len(releases)}')
 
     for index, release in enumerate(releases):
 
+        if should_cancel():
+            callback("Import cancelled.")
+            return
+
         release = discogs_client.release(release.id)
-        print(f'⚙️ {index+1}/{len(releases)} {discogs_summarise_release(release=release)}')
+        callback(f'⚙️ {index+1}/{len(releases)} {discogs_summarise_release(release=release)}')
 
         artist = normalize_artist(release.artists[0].name)
         title = normalize_title(release.title)
@@ -179,17 +167,17 @@ def import_from_discogs(config=None):
         if row:
             release_date = utils.earliest_date(row.release_date, year)
 
-            db_discogs.set_artist(release.id, artist)
-            db_discogs.set_title(release.id, title)
-            db_discogs.set_format(release.id, format)
-            db_discogs.set_country(release.id, country)
-            db_discogs.set_barcodes(release.id, barcodes if barcodes else None)
-            db_discogs.set_catnos(release.id, catnos if catnos else None)
-            db_discogs.set_year(release.id, year)
-            db_discogs.set_master_id(release.id, master_id)
-            db_discogs.set_release_date(release.id, release_date)
+            db_discogs.set_artist(release.id, artist, callback=callback)
+            db_discogs.set_title(release.id, title, callback=callback)
+            db_discogs.set_format(release.id, format, callback=callback)
+            db_discogs.set_country(release.id, country, callback=callback)
+            db_discogs.set_barcodes(release.id, barcodes if barcodes else None, callback=callback)
+            db_discogs.set_catnos(release.id, catnos if catnos else None, callback=callback)
+            db_discogs.set_year(release.id, year, callback=callback)
+            db_discogs.set_master_id(release.id, master_id, callback=callback)
+            db_discogs.set_release_date(release.id, release_date, callback=callback)
             if not row.sort_name:
-                db_discogs.set_sort_name(release.id, artist)
+                db_discogs.set_sort_name(release.id, artist, callback=callback)
 
         else:
 
