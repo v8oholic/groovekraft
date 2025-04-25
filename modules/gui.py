@@ -365,13 +365,15 @@ class CollectionViewer(QMainWindow):
                 if i != current_index:
                     tab_widget.setTabEnabled(i, False)
             match_button.setEnabled(True)
-            self.esc_shortcut.setEnabled(False)
+            self.esc_shortcut.activated.disconnect()
+            self.esc_shortcut.activated.connect(lambda: run_match(cancel=True))
 
         def enable_tabs_and_escape():
             tab_widget = self.centralWidget()
             for i in range(tab_widget.count()):
                 tab_widget.setTabEnabled(i, True)
-            self.esc_shortcut.setEnabled(True)
+            self.esc_shortcut.activated.disconnect()
+            self.esc_shortcut.activated.connect(self.close)
 
         class MBMatcherWorker(QObject):
             progress_msg = pyqtSignal(str)
@@ -402,7 +404,7 @@ class CollectionViewer(QMainWindow):
                     self.progress_msg.emit(f"Error: {e}")
                 self.finished.emit()
 
-        def run_match():
+        def run_match(cancel=False):
             import_button_label = "Match in MusicBrainz"
             cancel_button_label = "Cancel match"
 
@@ -441,7 +443,12 @@ class CollectionViewer(QMainWindow):
                 worker.finished.connect(self.mb_thread.quit)
                 worker.finished.connect(worker.deleteLater)
                 self.mb_thread.finished.connect(self.mb_thread.deleteLater)
-                worker.finished.connect(lambda: match_button.setText(import_button_label))
+                # Replace lambda with restore_button, which sets text and enables button
+
+                def restore_button():
+                    match_button.setText(import_button_label)
+                    match_button.setEnabled(True)
+                worker.finished.connect(restore_button)
                 # Enable tabs and Escape when match is finished
                 worker.finished.connect(enable_tabs_and_escape)
 
@@ -456,6 +463,7 @@ class CollectionViewer(QMainWindow):
                 if self.mb_worker:
                     self.mb_worker.cancel()
                     log_output.append("Cancelling match...")
+                    match_button.setEnabled(False)
                     enable_tabs_and_escape()
 
         match_button.clicked.connect(run_match)
