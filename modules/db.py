@@ -1,10 +1,17 @@
+import logging
+from collections import namedtuple
+import sqlite3
+from contextlib import contextmanager
+import os
+CREATE_MB_CREDENTIALS_TABLE = """
+    CREATE TABLE IF NOT EXISTS mb_credentials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        password TEXT NOT NULL
+    );
+"""
 #!/usr/bin/env python3
 
-import os
-from contextlib import contextmanager
-import sqlite3
-from collections import namedtuple
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +90,7 @@ def initialize_db(db_path: str = DB_PATH) -> None:
     cursor.execute(CREATE_UPDATE_TRIGGER)
     cursor.execute(CREATE_MB_MATCHES_TABLE)
     cursor.execute(CREATE_DISCOGS_OAUTH_TABLE)
+    cursor.execute(CREATE_MB_CREDENTIALS_TABLE)
 
     conn.commit()
     conn.close()

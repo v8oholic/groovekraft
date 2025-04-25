@@ -1,8 +1,6 @@
-# modules/__init__.py
-
-from . import config
-from . import db
-from . import utils
+from . import mb_auth_gui
+from . import mb_matcher
+from . import db_musicbrainz
 
 import logging
 

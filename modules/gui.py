@@ -1,16 +1,21 @@
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem,
-    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar
+    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar, QDialog
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
-from modules import db, utils
-from modules import discogs_importer
-
+import musicbrainzngs
 import sys
+from types import SimpleNamespace
+
+from modules import db, utils
+from discogs import discogs_importer
+from mb_modules import mb_matcher, mb_auth_gui
 from modules.config import AppConfig
+
+import mb_modules.db_musicbrainz as db_musicbrainz
 
 
 class ReleaseDetailWidget(QWidget):
@@ -67,7 +72,7 @@ class CollectionViewer(QMainWindow):
             def emit_msg(msg):
                 self.progress_msg.emit(msg)
 
-            from modules import discogs_importer
+            from discogs import discogs_importer
             try:
                 discogs_importer.import_from_discogs(
                     discogs_client=self.client,
@@ -93,6 +98,8 @@ class CollectionViewer(QMainWindow):
         tab_widget.addTab(randomiser_tab, "Randomiser")
         importer_tab = self.create_discogs_importer_tab()
         tab_widget.addTab(importer_tab, "Discogs Importer")
+        matcher_tab = self.create_musicbrainz_matcher_tab()
+        tab_widget.addTab(matcher_tab, "MusicBrainz Matcher")
         self.setCentralWidget(tab_widget)
         esc_shortcut = QShortcut(QKeySequence("Escape"), self)
         esc_shortcut.activated.connect(self.close)
@@ -333,6 +340,104 @@ class CollectionViewer(QMainWindow):
                     log_output.append("Cancelling import...")
 
         import_button.clicked.connect(on_import_button_clicked)
+        return widget
+
+    def create_musicbrainz_matcher_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        log_output = QTextEdit()
+        log_output.setReadOnly(True)
+        layout.addWidget(log_output)
+
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 100)
+        layout.addWidget(progress_bar)
+
+        match_button = QPushButton("Match in MusicBrainz")
+        layout.addWidget(match_button)
+
+        class MBMatcherWorker(QObject):
+            progress_msg = pyqtSignal(str)
+            progress = pyqtSignal(int)
+            finished = pyqtSignal()
+
+            def __init__(self, cfg):
+                super().__init__()
+                self.cfg = cfg
+                self._cancel_requested = False
+
+            def cancel(self):
+                self._cancel_requested = True
+
+            def run(self):
+                try:
+                    musicbrainzngs.set_useragent(
+                        app=self.cfg.user_agent, version=self.cfg.app_version)
+                    musicbrainzngs.auth(self.cfg.username, self.cfg.password)
+                    musicbrainzngs.set_rate_limit(1, 1)
+
+                    mb_matcher.match_discogs_against_mb(
+                        callback=self.progress_msg.emit,
+                        should_cancel=lambda: self._cancel_requested,
+                        progress_callback=lambda pct: self.progress.emit(pct)
+                    )
+                except Exception as e:
+                    self.progress_msg.emit(f"Error: {e}")
+                self.finished.emit()
+
+        def run_match():
+            import_button_label = "Match in MusicBrainz"
+            cancel_button_label = "Cancel match"
+
+            if match_button.text() == import_button_label:
+                creds = db_musicbrainz.get_credentials()
+                if creds:
+                    username, password = creds
+                    try:
+                        musicbrainzngs.set_useragent(app=self.cfg.user_agent,
+                                                     version=self.cfg.app_version)
+                        musicbrainzngs.auth(username, password)
+                    except Exception:
+                        creds = None
+
+                if not creds:
+                    dlg = mb_auth_gui.MBAuthDialog()
+                    if dlg.exec() == QDialog.DialogCode.Accepted:
+                        username, password = dlg.get_credentials()
+                        db_musicbrainz.set_credentials(username, password)
+                    else:
+                        return
+
+                cfg = SimpleNamespace()
+                cfg.user_agent = self.cfg.user_agent
+                cfg.app_version = self.cfg.app_version
+                cfg.username = username
+                cfg.password = password
+
+                self.mb_thread = QThread()
+                worker = MBMatcherWorker(cfg)
+                self.mb_worker = worker
+                worker.moveToThread(self.mb_thread)
+
+                worker.progress_msg.connect(lambda msg: log_output.append(msg))
+                worker.progress.connect(progress_bar.setValue)
+                worker.finished.connect(self.mb_thread.quit)
+                worker.finished.connect(worker.deleteLater)
+                self.mb_thread.finished.connect(self.mb_thread.deleteLater)
+                worker.finished.connect(lambda: match_button.setText(import_button_label))
+
+                self.mb_thread.started.connect(worker.run)
+                self.mb_thread.start()
+
+                match_button.setText(cancel_button_label)
+
+            else:
+                if self.mb_worker:
+                    self.mb_worker.cancel()
+                    log_output.append("Cancelling match...")
+
+        match_button.clicked.connect(run_match)
         return widget
 
 

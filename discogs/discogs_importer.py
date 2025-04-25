@@ -4,9 +4,9 @@
 import discogs_client
 from discogs_client.exceptions import HTTPError
 
-from modules import db_discogs
+from discogs import db_discogs
 from modules import utils
-from modules.oauth_gui import prompt_oauth_verifier_gui
+from discogs.discogs_oauth_gui import prompt_oauth_verifier_gui
 
 import logging
 

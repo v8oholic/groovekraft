@@ -10,9 +10,9 @@ from dateutil import parser
 import logging
 import configparser
 
-from modules import db_discogs
-from modules import mb_matcher
-from modules import discogs_importer
+from discogs import db_discogs
+from mb_modules import mb_matcher
+from discogs import discogs_importer
 from modules import db
 from modules import scraper
 from modules import reporting

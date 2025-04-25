@@ -4,13 +4,13 @@
 
 import logging
 
-from modules import db_discogs
-from modules import db_musicbrainz
+from discogs import db_discogs
+from mb_modules import db_musicbrainz
 from modules import db
 from modules import utils
 import musicbrainzngs
 from discogs_client.exceptions import HTTPError
-from musicbrainzngs import musicbrainz
+# from musicbrainzngs import musicbrainz
 import sys
 from rapidfuzz import fuzz
 
@@ -1135,40 +1135,23 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
             sort_name=sort_name)
 
 
-def match_discogs_against_mb(config=None):
+def match_discogs_against_mb(callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
 
-    musicbrainz.set_useragent(app=config.user_agent,
-                              version=config.app_version, contact=config.email)
+    # Authentication and useragent setup removed as per instructions.
 
-    try:
-        musicbrainz.auth(config.username, config.password)
-
-    except HTTPError:
-        logging.error("Unable to authenticate to Discogs.")
-        sys.exit(1)
-
-    except Exception as e:
-        logging.error(f'MusicBrainz authentication error {e}')
-        sys.exit(1)
-
-    musicbrainzngs.set_rate_limit(1, 1)
-
-    if config.id:
-        rows = db_discogs.fetch_discogs_release_rows(f'WHERE discogs_id = {config.id}')
-        print(f'matching just release {config.id}')
-    elif config.begin:
-        rows = db_discogs.fetch_discogs_release_rows(f'WHERE discogs_id >= {config.begin}')
-        print(f'matching {len(rows)} releases starting from {config.begin}')
-    elif config.unmatched:
-        rows = db_discogs.fetch_unmatched_discogs_release_rows()
-        print(f'matching {len(rows)} previously unmatched releases')
-    else:
-        rows = db_discogs.fetch_discogs_release_rows()
-        print(f'matching all {len(rows)} releases')
+    rows = db_discogs.fetch_discogs_release_rows()
 
     for index, row in enumerate(rows):
-        if config.verbose:
-            print(f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)}')
+
+        if should_cancel():
+            callback("Import cancelled.")
+            return
+
+        percent = int(((index + 1) / len(rows)) * 100)
+        progress_callback(percent)
+
+        callback(f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)}')
+
         match_release_in_musicbrainz(row.discogs_id)
 
 

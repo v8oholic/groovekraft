@@ -1,8 +1,6 @@
-# modules/__init__.py
-
-from . import config
-from . import db
-from . import utils
+from . import db_discogs
+from . import discogs_importer
+from . import discogs_oauth_gui
 
 import logging
 

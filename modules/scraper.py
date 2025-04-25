@@ -9,7 +9,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 import dateparser
 import logging
 
-from modules import db_discogs, utils, db
+from discogs import db_discogs
+from modules import utils, db
 
 logger = logging.getLogger(__name__)
 

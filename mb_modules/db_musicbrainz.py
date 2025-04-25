@@ -1,0 +1,119 @@
+from modules import db
+import logging
+import hashlib
+
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger(__name__)
+
+
+def update_field_if_changed(discogs_id, field_name, new_value, callback=print):
+    with db.context_manager() as cur:
+        cur.execute(f"""
+            SELECT {field_name}
+            FROM mb_matches
+            WHERE discogs_id = ? """, (discogs_id,))
+        row = cur.fetchone()
+        if not row:
+            raise Exception('Unexpected row not found error')
+        old_value = getattr(row, field_name)
+
+        if old_value == new_value:
+            return
+
+        callback(db.row_change(discogs_id, field_name, new_value, old_value))
+        cur.execute(f"""
+            UPDATE mb_matches
+            SET {field_name} = ?
+            WHERE discogs_id = ? """, (new_value, discogs_id))
+
+
+def set_mbid(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'mbid', new_value, callback=callback)
+
+
+def set_artist(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'artist', new_value, callback=callback)
+
+
+def set_title(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'title', new_value, callback=callback)
+
+
+def set_country(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'country', new_value, callback=callback)
+
+
+def set_format(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'format', new_value, callback=callback)
+
+
+def set_primary_type(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'primary_type', new_value, callback=callback)
+
+
+def set_score(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'score', new_value, callback=callback)
+
+
+def set_release_date(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'release_date', new_value, callback=callback)
+
+
+def set_sort_name(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'sort_name', new_value, callback=callback)
+
+
+def insert_row(
+        discogs_id=None,
+        mbid=None,
+        artist=None,
+        title=None,
+        sort_name=None,
+        country=None,
+        format=None,
+        primary_type=None,
+        score=None,
+        release_date=None):
+
+    with db.context_manager() as cur:
+        cur.execute("""
+            INSERT INTO mb_matches (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score, release_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score, release_date))
+
+
+def fetch_row(discogs_id):
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"""
+        SELECT id, discogs_id, mbid, artist, title, sort_name, country, score
+        FROM mb_matches
+        WHERE discogs_id = {discogs_id}
+        """)
+    item = cursor.fetchone()
+    conn.close()
+    return item
+
+
+def set_credentials(username, password):
+    hashed_password = hashlib.sha256(password.encode('utf-8')).hexdigest()
+    with db.context_manager() as cur:
+        cur.execute("DELETE FROM mb_credentials")
+        cur.execute("INSERT INTO mb_credentials (username, password) VALUES (?, ?)",
+                    (username, hashed_password))
+
+
+def get_credentials():
+    with db.context_manager() as cur:
+        cur.execute("SELECT username, password FROM mb_credentials LIMIT 1")
+        return cur.fetchone()
+
+
+def verify_credentials(username, password):
+    with db.context_manager() as cur:
+        cur.execute("SELECT password FROM mb_credentials WHERE username = ? LIMIT 1", (username,))
+        row = cur.fetchone()
+    if row:
+        hashed_input = hashlib.sha256(password.encode('utf-8')).hexdigest()
+        return hashed_input == row.password
+    return False

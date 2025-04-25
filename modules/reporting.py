@@ -1,5 +1,6 @@
 import logging
-from modules import db, discogs_importer, utils
+from discogs import discogs_importer
+from modules import db, utils
 from modules import config
 
 
