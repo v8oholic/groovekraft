@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem,
-    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox
+    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import Qt
@@ -53,6 +53,7 @@ class CollectionViewer(QMainWindow):
     class DiscogsImportWorker(QObject):
         progress_msg = pyqtSignal(str)
         finished = pyqtSignal()
+        progress = pyqtSignal(int)
 
         def __init__(self, client):
             super().__init__()
@@ -71,7 +72,8 @@ class CollectionViewer(QMainWindow):
                 discogs_importer.import_from_discogs(
                     discogs_client=self.client,
                     callback=emit_msg,
-                    should_cancel=lambda: self._cancel_requested
+                    should_cancel=lambda: self._cancel_requested,
+                    progress_callback=lambda pct: self.progress.emit(pct)
                 )
             except Exception as e:
                 self.progress_msg.emit(f"Error: {e}")
@@ -290,6 +292,11 @@ class CollectionViewer(QMainWindow):
         log_output.setReadOnly(True)
         layout.addWidget(log_output)
 
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 100)
+        progress_bar.setValue(0)
+        layout.addWidget(progress_bar)
+
         import_button = QPushButton("Import from Discogs")
         layout.addWidget(import_button)
 
@@ -312,6 +319,7 @@ class CollectionViewer(QMainWindow):
             worker.finished.connect(self.thread.quit)
             worker.finished.connect(worker.deleteLater)
             self.thread.finished.connect(self.thread.deleteLater)
+            worker.progress.connect(progress_bar.setValue)
 
             self.thread.started.connect(worker.run)
             self.thread.start()

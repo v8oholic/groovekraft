@@ -136,7 +136,7 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
     return ' '.join(output)
 
 
-def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: False):
+def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
 
     # fetch the identity object for the current logged in user.
     discogs_user = discogs_client.identity()
@@ -149,6 +149,9 @@ def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: Fa
         if should_cancel():
             callback("Import cancelled.")
             return
+
+        percent = int(((index + 1) / len(releases)) * 100)
+        progress_callback(percent)
 
         release = discogs_client.release(release.id)
         callback(f'⚙️ {index+1}/{len(releases)} {discogs_summarise_release(release=release)}')
