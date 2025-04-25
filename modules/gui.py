@@ -357,6 +357,20 @@ class CollectionViewer(QMainWindow):
         match_button = QPushButton("Match in MusicBrainz")
         layout.addWidget(match_button)
 
+        # --- Helper functions to enable/disable all tabs and adjust Escape key ---
+        def disable_tabs_and_escape():
+            tab_widget = self.centralWidget()
+            for i in range(tab_widget.count()):
+                tab_widget.setTabEnabled(i, False)
+            match_button.setEnabled(True)
+            self.esc_shortcut.setEnabled(False)
+
+        def enable_tabs_and_escape():
+            tab_widget = self.centralWidget()
+            for i in range(tab_widget.count()):
+                tab_widget.setTabEnabled(i, True)
+            self.esc_shortcut.setEnabled(True)
+
         class MBMatcherWorker(QObject):
             progress_msg = pyqtSignal(str)
             progress = pyqtSignal(int)
@@ -426,16 +440,21 @@ class CollectionViewer(QMainWindow):
                 worker.finished.connect(worker.deleteLater)
                 self.mb_thread.finished.connect(self.mb_thread.deleteLater)
                 worker.finished.connect(lambda: match_button.setText(import_button_label))
+                # Enable tabs and Escape when match is finished
+                worker.finished.connect(enable_tabs_and_escape)
 
                 self.mb_thread.started.connect(worker.run)
                 self.mb_thread.start()
 
                 match_button.setText(cancel_button_label)
+                # Disable tabs and Escape when match is started
+                disable_tabs_and_escape()
 
             else:
                 if self.mb_worker:
                     self.mb_worker.cancel()
                     log_output.append("Cancelling match...")
+                    enable_tabs_and_escape()
 
         match_button.clicked.connect(run_match)
         return widget

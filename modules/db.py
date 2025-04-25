@@ -35,7 +35,7 @@ CREATE_DISCOGS_RELEASES_TABLE = """
     );
 """
 
-CREATE_UPDATE_TRIGGER = """
+CREATE_DISCOGS_RELEASES_TRIGGER = """
     CREATE TRIGGER IF NOT EXISTS update_discogs_releases_updatetime
     BEFORE UPDATE
         ON discogs_releases
@@ -64,6 +64,17 @@ CREATE_MB_MATCHES_TABLE = """
     );
 """
 
+CREATE_MB_MATCHES_TRIGGER = """
+    CREATE TRIGGER IF NOT EXISTS update_mb_matches_updatetime
+    BEFORE UPDATE
+        ON mb_matches
+    BEGIN
+        UPDATE mb_matches
+        SET matched_at = CURRENT_TIMESTAMP
+        WHERE id = OLD.id;
+    END;
+"""
+
 CREATE_DISCOGS_OAUTH_TABLE = """
     CREATE TABLE IF NOT EXISTS discogs_oauth (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,8 +98,9 @@ def initialize_db(db_path: str = DB_PATH) -> None:
     logger.info("Initializing the database...")
 
     cursor.execute(CREATE_DISCOGS_RELEASES_TABLE)
-    cursor.execute(CREATE_UPDATE_TRIGGER)
+    cursor.execute(CREATE_DISCOGS_RELEASES_TRIGGER)
     cursor.execute(CREATE_MB_MATCHES_TABLE)
+    cursor.execute(CREATE_MB_MATCHES_TRIGGER)
     cursor.execute(CREATE_DISCOGS_OAUTH_TABLE)
     cursor.execute(CREATE_MB_CREDENTIALS_TABLE)
 
