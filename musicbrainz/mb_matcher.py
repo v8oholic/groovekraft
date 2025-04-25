@@ -1021,7 +1021,7 @@ def disambiguate_releases(
     return mb_release_group, mb_release, best_match_score
 
 
-def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None, best_match_score=0):
+def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None, best_match_score=0, callback=print):
 
     if mb_release is None:
         # nothing further can be done with this release
@@ -1090,16 +1090,16 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
     row = db_musicbrainz.fetch_row(discogs_id)
     if row:
         # update any changed items
-        db_musicbrainz.set_mbid(discogs_id, mb_release['id'])
-        db_musicbrainz.set_artist(discogs_id, artist)
-        db_musicbrainz.set_title(discogs_id, title)
-        db_musicbrainz.set_country(discogs_id, country)
-        db_musicbrainz.set_format(discogs_id, format)
-        db_musicbrainz.set_score(discogs_id, best_match_score)
-        db_musicbrainz.set_primary_type(discogs_id, primary_type)
+        db_musicbrainz.set_mbid(discogs_id, mb_release['id'], callback=callback)
+        db_musicbrainz.set_artist(discogs_id, artist, callback=callback)
+        db_musicbrainz.set_title(discogs_id, title, callback=callback)
+        db_musicbrainz.set_country(discogs_id, country, callback=callback)
+        db_musicbrainz.set_format(discogs_id, format, callback=callback)
+        db_musicbrainz.set_score(discogs_id, best_match_score, callback=callback)
+        db_musicbrainz.set_primary_type(discogs_id, primary_type, callback=callback)
 
-        db_discogs.set_release_date(discogs_id, release_date)
-        db_discogs.set_sort_name(discogs_id, sort_name)
+        db_discogs.set_release_date(discogs_id, release_date, callback=callback)
+        db_discogs.set_sort_name(discogs_id, sort_name, callback=callback)
 
     else:
         db_musicbrainz.insert_row(
