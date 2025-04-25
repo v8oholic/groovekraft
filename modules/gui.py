@@ -307,6 +307,24 @@ class CollectionViewer(QMainWindow):
         import_button = QPushButton("Import from Discogs")
         layout.addWidget(import_button)
 
+        # --- Helper functions to enable/disable all tabs and adjust Escape key ---
+        def disable_tabs_and_escape():
+            tab_widget = self.centralWidget()
+            current_index = tab_widget.currentIndex()
+            for i in range(tab_widget.count()):
+                if i != current_index:
+                    tab_widget.setTabEnabled(i, False)
+            import_button.setEnabled(True)
+            self.esc_shortcut.activated.disconnect()
+            self.esc_shortcut.activated.connect(lambda: on_import_button_clicked(cancel=True))
+
+        def enable_tabs_and_escape():
+            tab_widget = self.centralWidget()
+            for i in range(tab_widget.count()):
+                tab_widget.setTabEnabled(i, True)
+            self.esc_shortcut.activated.disconnect()
+            self.esc_shortcut.activated.connect(self.close)
+
         def run_import():
             try:
                 client, access_token, access_secret = discogs_importer.connect_to_discogs(self.cfg)
@@ -322,7 +340,11 @@ class CollectionViewer(QMainWindow):
             worker.moveToThread(self.thread)
 
             worker.progress_msg.connect(lambda msg: log_output.append(msg))
-            worker.finished.connect(lambda: import_button.setText("Import from Discogs"))
+
+            def restore_import_button():
+                import_button.setText("Import from Discogs")
+                import_button.setEnabled(True)
+            worker.finished.connect(restore_import_button)
             worker.finished.connect(self.thread.quit)
             worker.finished.connect(worker.deleteLater)
             self.thread.finished.connect(self.thread.deleteLater)
@@ -331,15 +353,20 @@ class CollectionViewer(QMainWindow):
             self.thread.started.connect(worker.run)
             self.thread.start()
 
-        def on_import_button_clicked():
-            if import_button.text() == "Import from Discogs":
+            # Disable tabs and Escape when import is started
+            disable_tabs_and_escape()
+
+        def on_import_button_clicked(cancel=False):
+            if import_button.text() == "Import from Discogs" and not cancel:
                 run_import()
             else:
                 if self.worker:
                     self.worker.cancel()
                     log_output.append("Cancelling import...")
+                    import_button.setEnabled(False)
+                    enable_tabs_and_escape()
 
-        import_button.clicked.connect(on_import_button_clicked)
+        import_button.clicked.connect(lambda: on_import_button_clicked())
         return widget
 
     def create_musicbrainz_matcher_tab(self):
