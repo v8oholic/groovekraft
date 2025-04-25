@@ -55,38 +55,28 @@ def set_score(discogs_id, new_value, callback=print):
     update_field_if_changed(discogs_id, 'score', new_value, callback=callback)
 
 
-def set_release_date(discogs_id, new_value, callback=print):
-    update_field_if_changed(discogs_id, 'release_date', new_value, callback=callback)
-
-
-def set_sort_name(discogs_id, new_value, callback=print):
-    update_field_if_changed(discogs_id, 'sort_name', new_value, callback=callback)
-
-
 def insert_row(
         discogs_id=None,
         mbid=None,
         artist=None,
         title=None,
-        sort_name=None,
         country=None,
         format=None,
         primary_type=None,
-        score=None,
-        release_date=None):
+        score=None):
 
     with db.context_manager() as cur:
         cur.execute("""
-            INSERT INTO mb_matches (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score, release_date)
+            INSERT INTO mb_matches (discogs_id, mbid, artist, title, country, format, primary_type, score)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (discogs_id, mbid, artist, title, sort_name, country, format, primary_type, score, release_date))
+        """, (discogs_id, mbid, artist, title, country, format, primary_type, score))
 
 
 def fetch_row(discogs_id):
     conn = db.get_connection()
     cursor = conn.cursor()
     cursor.execute(f"""
-        SELECT id, discogs_id, mbid, artist, title, sort_name, country, score
+        SELECT id, discogs_id, mbid, artist, title, country, score
         FROM mb_matches
         WHERE discogs_id = {discogs_id}
         """)

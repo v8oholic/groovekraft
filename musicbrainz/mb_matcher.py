@@ -1097,8 +1097,6 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
         db_musicbrainz.set_format(discogs_id, format)
         db_musicbrainz.set_score(discogs_id, best_match_score)
         db_musicbrainz.set_primary_type(discogs_id, primary_type)
-        db_musicbrainz.set_release_date(discogs_id, release_date)
-        db_musicbrainz.set_sort_name(discogs_id, sort_name)
 
         db_discogs.set_release_date(discogs_id, release_date)
         db_discogs.set_sort_name(discogs_id, sort_name)
@@ -1112,9 +1110,7 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
             country=country,
             format=format,
             score=best_match_score,
-            primary_type=primary_type,
-            release_date=release_date,
-            sort_name=sort_name)
+            primary_type=primary_type)
 
 
 def match_discogs_against_mb(callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):

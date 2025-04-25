@@ -85,6 +85,8 @@ def set_release_date(discogs_id, new_value, force=False, callback=print):
                 return
 
         callback(db.row_change(discogs_id, 'release_date', new_value, old_value))
+        callback('skipped!')
+        return
 
         cur.execute("""
             UPDATE discogs_releases

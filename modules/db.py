@@ -57,8 +57,6 @@ CREATE_MB_MATCHES_TABLE = """
         format TEXT,
         primary_type TEXT,
         score INTEGER,
-        release_date TEXT,
-        sort_name SORT_NAME,
         matched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (discogs_id) REFERENCES discogs_releases (discogs_id)
     );

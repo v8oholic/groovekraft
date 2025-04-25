@@ -101,8 +101,8 @@ class CollectionViewer(QMainWindow):
         matcher_tab = self.create_musicbrainz_matcher_tab()
         tab_widget.addTab(matcher_tab, "MusicBrainz Matcher")
         self.setCentralWidget(tab_widget)
-        esc_shortcut = QShortcut(QKeySequence("Escape"), self)
-        esc_shortcut.activated.connect(self.close)
+        self.esc_shortcut = QShortcut(QKeySequence("Escape"), self)
+        self.esc_shortcut.activated.connect(self.close)
         self.show()
 
     def create_on_this_day_tab(self):
@@ -360,8 +360,10 @@ class CollectionViewer(QMainWindow):
         # --- Helper functions to enable/disable all tabs and adjust Escape key ---
         def disable_tabs_and_escape():
             tab_widget = self.centralWidget()
+            current_index = tab_widget.currentIndex()
             for i in range(tab_widget.count()):
-                tab_widget.setTabEnabled(i, False)
+                if i != current_index:
+                    tab_widget.setTabEnabled(i, False)
             match_button.setEnabled(True)
             self.esc_shortcut.setEnabled(False)
 
