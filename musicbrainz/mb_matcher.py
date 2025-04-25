@@ -10,8 +10,6 @@ from modules import db
 from modules import utils
 import musicbrainzngs
 from discogs_client.exceptions import HTTPError
-# from musicbrainzngs import musicbrainz
-import sys
 from rapidfuzz import fuzz
 
 logger = logging.getLogger(__name__)
