@@ -5,7 +5,7 @@
 import logging
 
 from discogs import db_discogs
-from mb_modules import db_musicbrainz
+from musicbrainz import db_musicbrainz
 from modules import db
 from modules import utils
 import musicbrainzngs
@@ -232,14 +232,6 @@ def disambiguator_score(
         else:
             raise Exception("Unable to load MusicBrainz release")
 
-    # print(summarise(
-    #     artist=artist,
-    #     title=title,
-    #     country=country,
-    #     format=format,
-    #     catnos=catnos,
-    #     barcodes=barcodes))
-
     artist_score = 0
     title_score = 0
     country_score = 0
@@ -276,10 +268,6 @@ def disambiguator_score(
 
     total_points = artist_score+title_score+country_score+format_score+catno_score+barcode_score
 
-    # x = summarise(artist=mb_artist, title=mb_title, country=mb_country,
-    #               format=mb_format, catnos=mb_catnos, barcodes=mb_barcode)
-    # print(f'{x} {total_points} points {round(100 * total_points/MAXIMUM_SCORE)}%')
-
     return round(100 * total_points/MAXIMUM_SCORE)
 
 
@@ -295,7 +283,6 @@ def fuzzy_match(str1, str2, desc=''):
 
     if str1 == str2:
         ratio = PERFECT_SCORE
-        # print(f'match status for {desc}: "{str1}" "{str2}" {ratio}%')
         return ratio
 
     # simple = round(fuzz.ratio(str1, str2), 1)
@@ -303,14 +290,12 @@ def fuzzy_match(str1, str2, desc=''):
     # weighted = round(fuzz.WRatio(str1, str2), 1)
     quick = round(fuzz.QRatio(str1, str2), 1)
 
-    # print(f'{desc} "{str1}" "{str2}" simple {simple} partial {partial} weighted {weighted} quick {quick}')
-
     ratio = quick
-    # print(f'match status for {desc}: "{str1}" "{str2}" {ratio}')
+
     return ratio
 
 
-def mb_browse_release_groups_by_discogs_master_link(discogs_master_id=0):
+def mb_browse_release_groups_by_discogs_master_link(discogs_master_id=0, callback=print):
     """Browse release groups for a given Discogs master URL
 
     The expected result is either no matches or a single match. However
@@ -356,13 +341,13 @@ def mb_browse_release_groups_by_discogs_master_link(discogs_master_id=0):
         pass
 
     except Exception as e:
-        print(e)
+        callback(e)
 
     finally:
         return release_groups
 
 
-def mb_browse_releases_by_discogs_release_link(discogs_id=0):
+def mb_browse_releases_by_discogs_release_link(discogs_id=0, callback=print):
     """Browse releases for a given Discogs URL
 
     The expected result is either no matches or a single match. However
@@ -409,13 +394,13 @@ def mb_browse_releases_by_discogs_release_link(discogs_id=0):
         pass
 
     except Exception as e:
-        print(e)
+        callback(e)
 
     finally:
         return releases
 
 
-def mb_get_releases_for_release_group(mb_id):
+def mb_get_releases_for_release_group(mb_id, callback=print):
 
     batch_offset = 0
     batch_size = 25
@@ -553,7 +538,7 @@ def get_release_and_release_group(mb_release=None, mbid=None):
     return mb_release_group, mb_release
 
 
-def match_by_discogs_release_link(artist=None, title=None, country=None, format=None, barcodes=[], catnos=[], discogs_id=0):
+def match_by_discogs_release_link(artist=None, title=None, country=None, format=None, barcodes=[], catnos=[], discogs_id=0, callback=print):
     """Search MusicBrainz by Discogs release URL
 
     If the search fails, the master URL is also tried.
@@ -567,7 +552,7 @@ def match_by_discogs_release_link(artist=None, title=None, country=None, format=
         return None, None, 0
 
     if len(releases) == 1:
-        print(f'🎯 matched {mb_summarise_release(mb_release=releases[0])}')
+        callback(f'🎯 matched {mb_summarise_release(mb_release=releases[0])}')
         mb_release_group, mb_release = get_release_and_release_group(mb_release=releases[0])
         return mb_release_group, mb_release, PERFECT_SCORE
 
@@ -613,7 +598,8 @@ def find_match_by_discogs_link(
         barcodes=[],
         catnos=[],
         discogs_id=0,
-        master_id=0):
+        master_id=0,
+        callback=print):
     """Search MusicBrainz by Discogs release URL or master ID."""
 
     def get_best_release_match(releases):
@@ -654,7 +640,7 @@ def find_match_by_discogs_link(
             return None, None, 0
     elif len(releases) == 1:
         best_release = releases[0]
-        print(f'🎯 matched {mb_summarise_release(mb_release=best_release)}')
+        callback(f'🎯 matched {mb_summarise_release(mb_release=best_release)}')
         return load_release_and_group(best_release) + (PERFECT_SCORE,)
 
     else:
@@ -676,7 +662,7 @@ def find_match_by_discogs_link(
     best_group, best_release, best_score = search_and_rank_releases_by_master(master_id)
 
     if best_score >= MINIMUM_SCORE:
-        print(
+        callback(
             f'{"💯" if best_score == PERFECT_SCORE else "📈"} {best_score}% match {mb_summarise_release(mbid=best_release["id"])}')
         return best_group, best_release, best_score
 
@@ -692,11 +678,8 @@ def mb_match_discogs_release(mb_release_id, discogs_url):
     local_release = mb_release.get('release', {})
 
     for rel in local_release.get('url-relation-list', []):
-        # print(f'    type {rel['type']} target {rel['target']}')
         if rel['type'] == 'discogs':
-            # print(f'    type {rel['type']} target {rel['target']}')
             if rel['type'] == 'discogs' and rel['target'] == discogs_url:
-                # print(f"✅ matched {mb_summarise_release(mb_release=local_release)}")
                 return True
 
         return False
@@ -774,7 +757,7 @@ def mb_find_release_group_releases(artist=None, title=None, country=None, format
     return candidates
 
 
-def mb_find_releases(artist='', title='', catno=None, primary_type=None, country=None, barcode=None, format=None):
+def mb_find_releases(artist='', title='', catno=None, primary_type=None, country=None, barcode=None, format=None, callback=print):
     """
         Search for any releases matching the query
 
@@ -843,7 +826,6 @@ def mb_find_releases(artist='', title='', catno=None, primary_type=None, country
     max_results = 200
 
     query_string = ' AND '.join(query)
-    # print(f'query_string {query_string}')
 
     try:
         while len(all_results) < max_results:
@@ -863,7 +845,7 @@ def mb_find_releases(artist='', title='', catno=None, primary_type=None, country
             offset += batch_size
 
     except Exception as e:
-        print(f"Error: {e}")
+        callback(f"Error: {e}")
         all_results = []
 
     finally:
@@ -892,7 +874,7 @@ def add_candidates(candidates, releases):
     return candidates
 
 
-def match_release_in_musicbrainz(discogs_id):
+def match_release_in_musicbrainz(discogs_id, callback=print):
 
     row = db_discogs.fetch_row(discogs_id)
     if not row:
@@ -908,7 +890,8 @@ def match_release_in_musicbrainz(discogs_id):
     _, primary_type, format, secondary_format = mb_normalize_format(row.format)
 
     # try the Discogs release link first
-    candidates = mb_browse_releases_by_discogs_release_link(discogs_id=discogs_id)
+    candidates = mb_browse_releases_by_discogs_release_link(
+        discogs_id=discogs_id, callback=callback)
 
     if len(candidates) == 1:
         # special case for a single match
@@ -921,7 +904,8 @@ def match_release_in_musicbrainz(discogs_id):
             format=format,
             catnos=catnos,
             barcodes=barcodes,
-            score=PERFECT_SCORE)
+            score=PERFECT_SCORE,
+            callback=callback)
 
         mb_release_group, mb_release = get_release_and_release_group(mb_release=mb_release)
 
@@ -961,7 +945,8 @@ def match_release_in_musicbrainz(discogs_id):
         format=secondary_format,
         catnos=catnos,
         barcodes=barcodes,
-        score=best_match_score)
+        score=best_match_score,
+        callback=callback)
 
     if best_match_score < MINIMUM_SCORE:
         return
@@ -1026,7 +1011,6 @@ def disambiguate_releases(
         if disambiguation_score > best_match_score:
             best_match_score = disambiguation_score
             best_match_release = release
-            # print(f'{best_match_score}% {mb_summarise_release(best_match_release)}')
 
             if best_match_score == PERFECT_SCORE:
                 break
@@ -1144,7 +1128,7 @@ def match_discogs_against_mb(callback=print, should_cancel=lambda: False, progre
     for index, row in enumerate(rows):
 
         if should_cancel():
-            callback("Import cancelled.")
+            callback("Match cancelled.")
             return
 
         percent = int(((index + 1) / len(rows)) * 100)
@@ -1152,10 +1136,10 @@ def match_discogs_against_mb(callback=print, should_cancel=lambda: False, progre
 
         callback(f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)}')
 
-        match_release_in_musicbrainz(row.discogs_id)
+        match_release_in_musicbrainz(row.discogs_id, callback=callback)
 
 
-def mb_get_artist(artist):
+def mb_get_artist(artist, callback=print):
     """
         Search for artist by name, returning a single match
 
@@ -1182,7 +1166,7 @@ def mb_get_artist(artist):
         type	        the artist's type (“person”, “group”, etc.)
     """
 
-    print(f'searching for artist {artist}')
+    callback(f'searching for artist {artist}')
     result = musicbrainzngs.search_artists(query=f'artist:"{artist}"')
 
     if result is None:
@@ -1193,11 +1177,7 @@ def mb_get_artist(artist):
     if not artist_list:
         return None
 
-    print(f'found {len(artist_list)} matches')
-
-    # for arow in artist_list:
-    #     print(f'    id  : {arow['id']}')
-    #     print(f'    name: {arow['name']}')
+    callback(f'found {len(artist_list)} matches')
 
     # match a single
     artist_index = -1
@@ -1208,11 +1188,6 @@ def mb_get_artist(artist):
 
     if artist_index < 0:
         return None
-
-    # arow = artist_list[artist_index]
-    # print(arow)
-    # print(f'id  : {arow['id']}')
-    # print(f'name: {arow['name']}')
 
     newlist = [x for x in artist_list if artist.casefold() == x['name'].casefold()]
 
@@ -1342,7 +1317,7 @@ def mb_summarise_release_group(mb_release_group=None, mb_id=None):
     return ' '.join(output)
 
 
-def mb_find_release(artist='', title='', discogs_id=0, catno=None, primary_type=None, country=None, barcode=None, format=None):
+def mb_find_release(artist='', title='', discogs_id=0, catno=None, primary_type=None, country=None, barcode=None, format=None, callback=print):
     """Search for a release
 
     All these fields are searchable.
@@ -1414,7 +1389,6 @@ def mb_find_release(artist='', title='', discogs_id=0, catno=None, primary_type=
     max_results = 200
 
     query_string = ' AND '.join(query)
-    # print(f'query_string {query_string}')
 
     try:
         while len(all_results) < max_results:
@@ -1428,15 +1402,13 @@ def mb_find_release(artist='', title='', discogs_id=0, catno=None, primary_type=
 
             if releases:
                 for release in releases:
-                    # print(mb_summarise_release(release))
-
                     if mb_match_discogs_release(release.get('id'), discogs_url=discogs_url):
-                        print(f'✅ matched {mb_summarise_release(release)}')
+                        callback(f'✅ matched {mb_summarise_release(release)}')
                         return release
 
                 if len(releases) == 1:
                     # didn't match Discogs release URL, but there's only one result, so return it anyway
-                    print(f'✅ matched {mb_summarise_release(release)}')
+                    callback(f'✅ matched {mb_summarise_release(release)}')
                     return release
 
                 # if catno and mb_match_catno(release, catno):
@@ -1453,15 +1425,10 @@ def mb_find_release(artist='', title='', discogs_id=0, catno=None, primary_type=
             # Move to the next page
             offset += batch_size
 
-            # print(f'{len(all_results)} result(s) from query {query_string}')
-
-            # for release in all_results:
-            #     print(mb_summarise_release(release))
-
         return None
 
     except Exception as e:
-        print(f"Error: {e}")
+        callback(f"Error: {e}")
         # return []
         return None
 
@@ -1541,7 +1508,8 @@ def output_match_summary(
         format=None,
         catnos=None,
         barcodes=None,
-        score=0):
+        score=0,
+        callback=print):
 
     output = []
 
@@ -1568,4 +1536,4 @@ def output_match_summary(
         barcodes = utils.normalize_identifier_list(barcodes)
         output.append(','.join(barcodes))
 
-    print(' '.join(output))
+    callback(' '.join(output))

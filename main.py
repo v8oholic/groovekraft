@@ -11,7 +11,7 @@ import logging
 import configparser
 
 from discogs import db_discogs
-from mb_modules import mb_matcher
+from musicbrainz import mb_matcher
 from discogs import discogs_importer
 from modules import db
 from modules import scraper

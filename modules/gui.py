@@ -12,10 +12,10 @@ from types import SimpleNamespace
 
 from modules import db, utils
 from discogs import discogs_importer
-from mb_modules import mb_matcher, mb_auth_gui
+from musicbrainz import mb_matcher, mb_auth_gui
 from modules.config import AppConfig
 
-import mb_modules.db_musicbrainz as db_musicbrainz
+import musicbrainz.db_musicbrainz as db_musicbrainz
 
 
 class ReleaseDetailWidget(QWidget):
