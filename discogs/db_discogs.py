@@ -94,8 +94,8 @@ def set_release_date(discogs_id, new_value, force=False, callback=print):
             WHERE discogs_id = ? """, (new_value, discogs_id))
 
 
-def set_sort_name(discogs_id, new_value):
-    update_field_if_changed(discogs_id, 'sort_name', new_value)
+def set_sort_name(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'sort_name', new_value, callback)
 
 
 def insert_row(
@@ -131,18 +131,18 @@ def fetch_row(discogs_id):
 
 
 def fetch_discogs_release_rows(where=None):
-    conn = db.get_connection()
-    cursor = conn.cursor()
 
-    query = []
-    query.append("SELECT * FROM discogs_releases")
-    if where:
-        query.append(where)
-    query.append('ORDER BY discogs_id')
-    cursor.execute(' '.join(query))
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
+    with db.context_manager() as cur:
+
+        query = []
+        query.append("SELECT * FROM discogs_releases")
+        if where:
+            query.append(where)
+        query.append('ORDER BY discogs_id')
+
+        cur.execute(' '.join(query))
+
+        return cur.fetchall()
 
 
 def fetch_unmatched_discogs_release_rows():

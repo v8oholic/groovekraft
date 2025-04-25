@@ -1,16 +1,9 @@
+#!/usr/bin/env python3
 import logging
 from collections import namedtuple
 import sqlite3
 from contextlib import contextmanager
 import os
-CREATE_MB_CREDENTIALS_TABLE = """
-    CREATE TABLE IF NOT EXISTS mb_credentials (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT NOT NULL,
-        password TEXT NOT NULL
-    );
-"""
-#!/usr/bin/env python3
 
 
 logger = logging.getLogger(__name__)
@@ -78,6 +71,14 @@ CREATE_DISCOGS_OAUTH_TABLE = """
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         oauth_token TEXT,
         oauth_token_secret TEXT
+    );
+"""
+
+CREATE_MB_CREDENTIALS_TABLE = """
+    CREATE TABLE IF NOT EXISTS mb_credentials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        password TEXT NOT NULL
     );
 """
 

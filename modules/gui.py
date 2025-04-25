@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem,
-    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar, QDialog
+    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar, QDialog, QCheckBox
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import Qt
@@ -373,6 +373,14 @@ class CollectionViewer(QMainWindow):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
+        # Add Match All checkbox at the very start, centered horizontally
+        match_all_checkbox = QCheckBox("Match all items")
+        match_all_layout = QHBoxLayout()
+        match_all_layout.addStretch()
+        match_all_layout.addWidget(match_all_checkbox)
+        match_all_layout.addStretch()
+        layout.addLayout(match_all_layout)
+
         log_output = QTextEdit()
         log_output.setReadOnly(True)
         layout.addWidget(log_output)
@@ -411,6 +419,7 @@ class CollectionViewer(QMainWindow):
                 super().__init__()
                 self.cfg = cfg
                 self._cancel_requested = False
+                self.match_all = cfg.match_all
 
             def cancel(self):
                 self._cancel_requested = True
@@ -425,7 +434,8 @@ class CollectionViewer(QMainWindow):
                     mb_matcher.match_discogs_against_mb(
                         callback=self.progress_msg.emit,
                         should_cancel=lambda: self._cancel_requested,
-                        progress_callback=lambda pct: self.progress.emit(pct)
+                        progress_callback=lambda pct: self.progress.emit(pct),
+                        match_all=self.match_all
                     )
                 except Exception as e:
                     self.progress_msg.emit(f"Error: {e}")
@@ -459,6 +469,8 @@ class CollectionViewer(QMainWindow):
                 cfg.app_version = self.cfg.app_version
                 cfg.username = username
                 cfg.password = password
+                # Add match_all from checkbox
+                cfg.match_all = match_all_checkbox.isChecked()
 
                 self.mb_thread = QThread()
                 worker = MBMatcherWorker(cfg)

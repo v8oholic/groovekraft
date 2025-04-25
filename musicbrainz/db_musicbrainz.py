@@ -55,6 +55,14 @@ def set_score(discogs_id, new_value, callback=print):
     update_field_if_changed(discogs_id, 'score', new_value, callback=callback)
 
 
+def update_matched_at(discogs_id, callback=print):
+    with db.context_manager() as cur:
+        cur.execute("""
+            UPDATE mb_matches
+            SET matched_at = CURRENT_TIMESTAMP
+            WHERE discogs_id = ? """, (discogs_id,))
+
+
 def insert_row(
         discogs_id=None,
         mbid=None,
@@ -73,16 +81,14 @@ def insert_row(
 
 
 def fetch_row(discogs_id):
-    conn = db.get_connection()
-    cursor = conn.cursor()
-    cursor.execute(f"""
-        SELECT id, discogs_id, mbid, artist, title, country, score
-        FROM mb_matches
-        WHERE discogs_id = {discogs_id}
-        """)
-    item = cursor.fetchone()
-    conn.close()
-    return item
+    with db.context_manager() as cur:
+        cur.execute(f"""
+            SELECT id, discogs_id, mbid, artist, title, country, score, matched_at
+            FROM mb_matches
+            WHERE discogs_id = {discogs_id}
+            """)
+        item = cur.fetchone()
+        return item
 
 
 def set_credentials(username, password):
