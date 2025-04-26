@@ -278,10 +278,24 @@ class CollectionViewer(QMainWindow):
 
     def create_randomiser_tab(self):
         widget = QWidget()
-        layout = QVBoxLayout(widget)
+        layout = QHBoxLayout(widget)
+
+        # Add image display
+        self.image_label = QLabel()
+        self.image_label.setFixedSize(300, 300)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.image_label)
+
+        # Release details next to the image
+        right_layout = QVBoxLayout()
 
         self.detail_widget = ReleaseDetailWidget()
-        layout.addWidget(self.detail_widget)
+        right_layout.addWidget(self.detail_widget)
+
+        random_button = QPushButton("Randomise")
+        right_layout.addWidget(random_button)
+
+        layout.addLayout(right_layout)
 
         def load_random_item():
             with db.context_manager() as cur:
@@ -295,9 +309,19 @@ class CollectionViewer(QMainWindow):
                     data = dict(zip(self.detail_widget.labels.keys(), row))
                     self.detail_widget.update_data(data)
 
-        random_button = QPushButton("Randomise")
+                    # Load image
+                    discogs_id = row.discogs_id
+                    image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
+                    if os.path.exists(image_path):
+                        from PyQt6.QtGui import QPixmap
+                        pixmap = QPixmap(image_path)
+                        pixmap = pixmap.scaled(self.image_label.width(), self.image_label.height(
+                        ), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        self.image_label.setPixmap(pixmap)
+                    else:
+                        self.image_label.clear()
+
         random_button.clicked.connect(load_random_item)
-        layout.addWidget(random_button)
 
         load_random_item()
 

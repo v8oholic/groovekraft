@@ -216,8 +216,15 @@ def import_from_discogs(discogs_client, images_folder, callback=print, should_ca
             imported += 1
 
         primary_image_url = None
-        if hasattr(release, 'images') and release.images and release.images[0].get('type', '').lower() == 'primary':
-            primary_image_url = release.images[0]['uri']
+        if hasattr(release, 'images') and release.images:
+            for img in release.images:
+                if img.get('type', '').lower() == 'primary':
+                    primary_image_url = img['uri']
+                    break
+            if not primary_image_url:
+                primary_image_url = release.images[0]['uri']
+                callback(
+                    f"⚠️ No primary image marked for release {release.id}, using first available image.")
 
         existing_uri = getattr(row, 'primary_image_uri', None) if row else None
 
