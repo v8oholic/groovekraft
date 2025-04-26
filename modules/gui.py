@@ -1,3 +1,4 @@
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QDialogButtonBox
 from modules import db, utils
 import musicbrainz.db_musicbrainz as db_musicbrainz
 from modules.config import AppConfig
@@ -62,6 +63,122 @@ class ReleaseDetailWidget(QWidget):
                 self.labels[key].setText("Yes" if value else "No")
             else:
                 self.labels[key].setText(str(value))
+
+
+# --- ReleaseDateEditDialog for editing release date in Collection tab ---
+
+
+# Redesigned ReleaseDateEditDialog with dynamic input controls
+class ReleaseDateEditDialog(QDialog):
+    def __init__(self, initial_date, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Release Date")
+        self.resize(350, 250)
+
+        layout = QVBoxLayout(self)
+
+        self.date_type_combo = QComboBox()
+        self.date_type_combo.addItems([
+            "Full Date (YYYY-MM-DD)",
+            "Month and Year (YYYY-MM)",
+            "Year Only (YYYY)"
+        ])
+        layout.addWidget(self.date_type_combo)
+
+        # Calendar for full date selection
+        from PyQt6.QtWidgets import QCalendarWidget
+        self.calendar = QCalendarWidget()
+        layout.addWidget(self.calendar)
+
+        # Month and Year dropdowns
+        self.month_combo = QComboBox()
+        self.year_combo = QComboBox()
+        for year in range(1900, 2101):
+            self.year_combo.addItem(str(year))
+        for month in range(1, 13):
+            self.month_combo.addItem(f"{month:02}")
+        # Group Year and Month dropdowns horizontally
+        self.year_month_layout = QHBoxLayout()
+        self.year_month_layout.addWidget(self.year_combo)
+        self.year_month_layout.addWidget(self.month_combo)
+        self.year_combo.hide()
+        self.month_combo.hide()
+        layout.addLayout(self.year_month_layout)
+
+        # Year only dropdown
+        self.year_only_combo = QComboBox()
+        for year in range(1900, 2101):
+            self.year_only_combo.addItem(str(year))
+        self.year_only_combo.hide()
+        layout.addWidget(self.year_only_combo)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                                      QDialogButtonBox.StandardButton.Cancel)
+        layout.addWidget(button_box)
+
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+
+        self.date_type_combo.currentIndexChanged.connect(self.update_visible_widgets)
+
+        # Initialize the controls based on initial_date
+        self.init_with_date(initial_date)
+
+    def update_visible_widgets(self):
+        mode = self.date_type_combo.currentIndex()
+
+        from PyQt6.QtCore import QDate
+
+        # If switching into Full Date mode, prefill the calendar
+        if mode == 0:
+            if self.year_only_combo.isVisible():
+                year = int(self.year_only_combo.currentText())
+                self.calendar.setSelectedDate(QDate(year, 1, 1))  # Jan 1st
+            elif self.year_combo.isVisible() and self.month_combo.isVisible():
+                year = int(self.year_combo.currentText())
+                month = int(self.month_combo.currentText())
+                self.calendar.setSelectedDate(QDate(year, month, 1))  # 1st of selected month
+
+        # Preserve year selection when switching from Year Only to Month-Year
+        if mode == 1 and self.year_only_combo.isVisible():
+            self.year_combo.setCurrentText(self.year_only_combo.currentText())
+
+        self.calendar.setVisible(mode == 0)
+        self.year_combo.setVisible(mode == 1)
+        self.month_combo.setVisible(mode == 1)
+        self.year_only_combo.setVisible(mode == 2)
+
+    def init_with_date(self, initial_date):
+        if len(initial_date) == 10 and '-' in initial_date:
+            self.date_type_combo.setCurrentIndex(0)
+            try:
+                from PyQt6.QtCore import QDate
+                year, month, day = map(int, initial_date.split('-'))
+                self.calendar.setSelectedDate(QDate(year, month, day))
+            except Exception:
+                pass
+        elif len(initial_date) == 7 and '-' in initial_date:
+            self.date_type_combo.setCurrentIndex(1)
+            year, month = initial_date.split('-')
+            self.year_combo.setCurrentText(year)
+            self.month_combo.setCurrentText(month)
+        elif len(initial_date) == 4:
+            self.date_type_combo.setCurrentIndex(2)
+            self.year_only_combo.setCurrentText(initial_date)
+        else:
+            self.date_type_combo.setCurrentIndex(0)
+
+        self.update_visible_widgets()
+
+    def get_date(self):
+        mode = self.date_type_combo.currentIndex()
+        if mode == 0:
+            return self.calendar.selectedDate().toString("yyyy-MM-dd")
+        elif mode == 1:
+            return f"{self.year_combo.currentText()}-{self.month_combo.currentText()}"
+        elif mode == 2:
+            return self.year_only_combo.currentText()
+        return ""
 
 
 class CollectionViewer(QMainWindow):
@@ -187,6 +304,7 @@ class CollectionViewer(QMainWindow):
             details_label.setText(details_html)
             details_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             details_label.setWordWrap(True)
+            details_label.setContentsMargins(10, 0, 10, 0)
             table.setCellWidget(row_idx, 1, details_label)
 
             # Column 2: Release Date (humanized, bold + delta)
@@ -195,6 +313,7 @@ class CollectionViewer(QMainWindow):
             release_label.setText(release_text)
             release_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             release_label.setWordWrap(True)
+            release_label.setContentsMargins(10, 0, 10, 0)
             table.setCellWidget(row_idx, 2, release_label)
 
             # Column 3: Discogs Id (right aligned)
@@ -294,6 +413,7 @@ class CollectionViewer(QMainWindow):
                 details_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
                                            Qt.AlignmentFlag.AlignVCenter)
                 details_label.setWordWrap(True)
+                details_label.setContentsMargins(10, 0, 10, 0)
                 table.setCellWidget(row_idx, 1, details_label)
 
                 # Column 2: Release Date (QLabel, bold humanized + delta)
@@ -303,6 +423,7 @@ class CollectionViewer(QMainWindow):
                 release_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
                                            Qt.AlignmentFlag.AlignVCenter)
                 release_label.setWordWrap(True)
+                release_label.setContentsMargins(10, 0, 10, 0)
                 table.setCellWidget(row_idx, 2, release_label)
 
                 # Column 3: Discogs Id
@@ -323,6 +444,42 @@ class CollectionViewer(QMainWindow):
                 table.setItem(row_idx, 4, match_item)
 
             table.resizeColumnsToContents()
+
+            # Hook up double-click for editing release date
+            table.cellDoubleClicked.connect(lambda row, col: on_table_double_click(row, col, table))
+
+        # Define double-click handler for release date edit
+        def on_table_double_click(row, column, table):
+            if column == 2:  # Release Date column
+                label = table.cellWidget(row, column)
+                if label:
+                    current_text = label.text()
+                    # Extract the date part from HTML
+                    import re
+                    match = re.search(r"<b>(.*?)</b>", current_text)
+                    if match:
+                        initial_date = match.group(1)
+                    else:
+                        initial_date = ""
+
+                    dialog = ReleaseDateEditDialog(initial_date)
+                    if dialog.exec() == QDialog.DialogCode.Accepted:
+                        new_date = dialog.get_date()
+                        if new_date:
+                            # Update database
+                            discogs_id_item = table.item(row, 3)
+                            if discogs_id_item:
+                                discogs_id = int(discogs_id_item.text())
+                                with db.context_manager() as cur:
+                                    cur.execute(
+                                        "UPDATE discogs_releases SET release_date = ? WHERE discogs_id = ?",
+                                        (new_date, discogs_id)
+                                    )
+                                db.commit()
+
+                            # Update table visually
+                            label.setText(
+                                f"<b>{utils.parse_and_humanize_date(new_date)}</b><br>{utils.humanize_date_delta(new_date)}")
 
         # Connect filter changes to repopulate the table
         artist_input.textChanged.connect(populate_table)
