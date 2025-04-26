@@ -243,21 +243,34 @@ class CollectionViewer(QMainWindow):
                 cur.execute(' '.join(query))
                 rows = cur.fetchall()
 
-            table.setColumnCount(7)
+            table.setColumnCount(8)
             table.setHorizontalHeaderLabels(
-                ['Artist', 'Title', 'Format', 'Country', 'Release Date', 'Discogs Id', 'Matched'])
+                ['Thumbnail', 'Artist', 'Title', 'Format', 'Country', 'Release Date', 'Discogs Id', 'Matched'])
             table.setRowCount(len(rows))
+            # Set row height to fit thumbnails
+            table.verticalHeader().setDefaultSectionSize(110)
 
             for row_idx, (sort_name, artist, title, format, country, release_date, discogs_id, mbid) in enumerate(rows):
-                table.setItem(row_idx, 0, QTableWidgetItem(artist))
-                table.setItem(row_idx, 1, QTableWidgetItem(title))
-                table.setItem(row_idx, 2, QTableWidgetItem(format))
-                table.setItem(row_idx, 3, QTableWidgetItem(country))
-                table.setItem(row_idx, 4, QTableWidgetItem(release_date))
-                table.setItem(row_idx, 5, QTableWidgetItem(str(discogs_id)))
-                table.item(row_idx, 5).setTextAlignment(
+                # Load and set the thumbnail
+                image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
+                if os.path.exists(image_path):
+                    from PyQt6.QtGui import QPixmap
+                    pixmap = QPixmap(image_path)
+                    pixmap = pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
+                                           Qt.TransformationMode.SmoothTransformation)
+                    thumbnail_item = QTableWidgetItem()
+                    thumbnail_item.setData(Qt.ItemDataRole.DecorationRole, pixmap)
+                    table.setItem(row_idx, 0, thumbnail_item)
+
+                table.setItem(row_idx, 1, QTableWidgetItem(artist))
+                table.setItem(row_idx, 2, QTableWidgetItem(title))
+                table.setItem(row_idx, 3, QTableWidgetItem(format))
+                table.setItem(row_idx, 4, QTableWidgetItem(country))
+                table.setItem(row_idx, 5, QTableWidgetItem(release_date))
+                table.setItem(row_idx, 6, QTableWidgetItem(str(discogs_id)))
+                table.item(row_idx, 6).setTextAlignment(
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                table.setItem(row_idx, 6, QTableWidgetItem("Yes" if mbid else "No"))
+                table.setItem(row_idx, 7, QTableWidgetItem("Yes" if mbid else "No"))
 
             table.resizeColumnsToContents()
 
