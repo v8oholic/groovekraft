@@ -132,11 +132,9 @@ class CollectionViewer(QMainWindow):
         format_filter = ''
 
         with db.context_manager() as cur:
-
             query = []
-
             query.append(
-                'SELECT d.sort_name AS artist, d.title, d.format, d.release_date, d.discogs_id')
+                'SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id')
             query.append('FROM discogs_releases d')
             query.append('LEFT JOIN mb_matches m USING(discogs_id)')
             query.append('WHERE d.release_date IS NOT NULL')
@@ -148,44 +146,69 @@ class CollectionViewer(QMainWindow):
                 query.append(f'AND d.format LIKE "%{format_filter}%"')
             query.append(
                 'ORDER BY length(d.release_date) DESC, d.release_date, d.sort_name, d.title, d.discogs_id')
-
             cur.execute(' '.join(query))
-
             items = cur.fetchall()
 
         # filter rows
         rows = []
-
         for item in items:
             if item.release_date and len(item.release_date) == 10:
                 include = utils.is_today_anniversary(item.release_date)
-
             elif item.release_date and len(item.release_date) == 7:
                 include = utils.is_month_anniversary(item.release_date)
             else:
                 include = False
-
             if include:
                 rows.append(item)
 
-        table.setColumnCount(6)
+        # Set up table to match Collection tab structure
+        table.setColumnCount(5)
         table.setHorizontalHeaderLabels(
-            ['Anniversary', 'Release Date', 'Artist', 'Title', 'Format', 'Discogs Id'])
+            ['Thumbnail', 'Details', 'Release Date', 'Discogs Id', 'Matched'])
         table.setRowCount(len(rows))
+        table.verticalHeader().setDefaultSectionSize(110)
 
-        for row_idx, (artist, title, format, release_date, discogs_id) in enumerate(rows):
+        for row_idx, (artist, title, format, country, release_date, discogs_id) in enumerate(rows):
+            # Column 0: Thumbnail
+            image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
+            if os.path.exists(image_path):
+                from PyQt6.QtGui import QPixmap
+                pixmap = QPixmap(image_path)
+                pixmap = pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
+                                       Qt.TransformationMode.SmoothTransformation)
+                thumbnail_item = QTableWidgetItem()
+                thumbnail_item.setData(Qt.ItemDataRole.DecorationRole, pixmap)
+                thumbnail_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                table.setItem(row_idx, 0, thumbnail_item)
 
-            if release_date:
-                table.setItem(row_idx, 0, QTableWidgetItem(utils.humanize_date_delta(release_date)))
-                table.setItem(row_idx, 1, QTableWidgetItem(
-                    utils.parse_and_humanize_date(release_date)))
+            # Column 1: Details (QLabel with HTML, similar to Collection tab)
+            details_html = f"<b>{title}</b><br>{artist}<br>{format}<br>{country}"
+            details_label = QLabel()
+            details_label.setText(details_html)
+            details_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            details_label.setWordWrap(True)
+            table.setCellWidget(row_idx, 1, details_label)
 
-            table.setItem(row_idx, 2, QTableWidgetItem(artist))
-            table.setItem(row_idx, 3, QTableWidgetItem(title))
-            table.setItem(row_idx, 4, QTableWidgetItem(format))
-            table.setItem(row_idx, 5, QTableWidgetItem(str(discogs_id)))
-            table.item(row_idx, 5).setTextAlignment(
+            # Column 2: Release Date (humanized, bold + delta)
+            release_text = f"<b>{utils.parse_and_humanize_date(release_date)}</b><br>{utils.humanize_date_delta(release_date)}"
+            release_label = QLabel()
+            release_label.setText(release_text)
+            release_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            release_label.setWordWrap(True)
+            table.setCellWidget(row_idx, 2, release_label)
+
+            # Column 3: Discogs Id (right aligned)
+            table.setItem(row_idx, 3, QTableWidgetItem(str(discogs_id)))
+            table.item(row_idx, 3).setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+            # Column 4: Matched (show stars)
+            mb_row = db_musicbrainz.fetch_row(discogs_id=discogs_id)
+            score = mb_row.score if mb_row and mb_row.score is not None else 0
+            match_star = mb_matcher.score_stars(score)
+            match_item = QTableWidgetItem(match_star)
+            match_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(row_idx, 4, match_item)
 
         table.resizeColumnsToContents()
         return widget
@@ -246,7 +269,7 @@ class CollectionViewer(QMainWindow):
             # Update table columns and headers to new format
             table.setColumnCount(5)
             table.setHorizontalHeaderLabels(
-                ['Thumbnail', 'Details', 'Release Date', 'Discogs Id', 'Matched'])
+                ['Artwork', 'Details', 'Release Date', 'Discogs Id', 'Matched'])
             table.setRowCount(len(rows))
             # Set row height to fit thumbnails
             table.verticalHeader().setDefaultSectionSize(110)
@@ -273,14 +296,31 @@ class CollectionViewer(QMainWindow):
                 details_label.setWordWrap(True)
                 table.setCellWidget(row_idx, 1, details_label)
 
-                # Column 2: Release Date
-                table.setItem(row_idx, 2, QTableWidgetItem(release_date))
+                # Column 2: Release Date (QLabel, bold humanized + delta)
+                release_text = f"<b>{utils.parse_and_humanize_date(release_date)}</b><br>{utils.humanize_date_delta(release_date)}"
+                release_label = QLabel()
+                release_label.setText(release_text)
+                release_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
+                                           Qt.AlignmentFlag.AlignVCenter)
+                release_label.setWordWrap(True)
+                table.setCellWidget(row_idx, 2, release_label)
+
                 # Column 3: Discogs Id
                 table.setItem(row_idx, 3, QTableWidgetItem(str(discogs_id)))
                 table.item(row_idx, 3).setTextAlignment(
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                # Column 4: Matched
-                table.setItem(row_idx, 4, QTableWidgetItem("Yes" if mbid else "No"))
+
+                # Column 4: Matched (centered)
+                if mbid:
+                    mb_row = db_musicbrainz.fetch_row(discogs_id=discogs_id)
+                    score = mb_row.score if mb_row and mb_row.score is not None else 0
+                else:
+                    score = 0
+
+                match_star = mb_matcher.score_stars(score)
+                match_item = QTableWidgetItem(match_star)
+                match_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                table.setItem(row_idx, 4, match_item)
 
             table.resizeColumnsToContents()
 

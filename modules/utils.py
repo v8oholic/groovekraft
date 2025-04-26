@@ -281,13 +281,13 @@ def humanize_date_delta(dt1, dt2=datetime.date.today()):
 
     if len(dt1) == 4:
         parts = build_parts(rd, ['years'])
-        suffix = 'this year'
+        suffix = 'ago this year'
     elif len(dt1) == 7:
         parts = build_parts(rd, ['years', 'months'])
-        suffix = 'this month'
+        suffix = 'ago this month'
     else:
         parts = build_parts(rd, ['years', 'months', 'days'])
-        suffix = 'today'
+        suffix = 'ago today'
 
     if not parts:
         return f'just now ({suffix})'
