@@ -6,7 +6,7 @@ APP_VERSION = '0.2'
 
 
 class AppConfig:
-    def __init__(self, args):
+    def __init__(self, args, root_folder):
 
         self.verbose = args.verbose
         self.database_name = args.database or "local.db"
@@ -17,7 +17,7 @@ class AppConfig:
         self.oauth_token_secret = None
         self.username = None
         self.password = None
-
+        self.root_folder = root_folder
         self.app_version = APP_VERSION
 
     def load_from_config_parser(self, config_parser):

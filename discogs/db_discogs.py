@@ -183,3 +183,7 @@ def get_oauth_tokens():
         cur.execute("SELECT oauth_token, oauth_token_secret FROM discogs_oauth LIMIT 1")
         row = cur.fetchone()
     return row
+
+
+def set_primary_image_uri(discogs_id, new_value, callback=print):
+    update_field_if_changed(discogs_id, 'primary_image_uri', new_value, callback)

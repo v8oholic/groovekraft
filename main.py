@@ -9,6 +9,7 @@ import signal
 from dateutil import parser
 import logging
 import configparser
+import os
 
 from modules import db
 from modules.config import AppConfig
@@ -74,9 +75,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config_parser = configparser.ConfigParser()
-    config_parser.read("discogs.ini")
+    if not config_parser.read("discogs.ini"):
+        print("Error: Could not find discogs.ini configuration file. Are you running from the application directory?")
+        sys.exit(1)
 
-    config = AppConfig(args)
+    config = AppConfig(args, os.path.dirname(os.path.abspath(__file__)))
     config.load_from_config_parser(config_parser)
 
     db.initialize_db()

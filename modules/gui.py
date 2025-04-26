@@ -11,6 +11,8 @@ from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
+import os
+
 import musicbrainzngs
 import sys
 from types import SimpleNamespace
@@ -84,6 +86,7 @@ class CollectionViewer(QMainWindow):
             try:
                 discogs_importer.import_from_discogs(
                     discogs_client=self.client,
+                    images_folder=self.parent().cfg.images_folder,
                     callback=emit_msg,
                     should_cancel=lambda: self._cancel_requested,
                     progress_callback=lambda pct: self.progress.emit(pct)
@@ -96,6 +99,8 @@ class CollectionViewer(QMainWindow):
         super().__init__()
         self.setWindowTitle("Collection Viewer")
         self.cfg = cfg
+        if not hasattr(self.cfg, "images_folder"):
+            self.cfg.images_folder = os.path.join(self.cfg.root_folder, "images")
         self.setMinimumSize(800, 600)
         tab_widget = QTabWidget()
         on_this_day_tab = self.create_on_this_day_tab()

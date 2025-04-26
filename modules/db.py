@@ -24,6 +24,7 @@ CREATE_DISCOGS_RELEASES_TABLE = """
         master_id INTEGER,
         release_date TEXT,
         sort_name TEXT COLLATE NOCASE,
+        primary_image_uri TEXT,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 """

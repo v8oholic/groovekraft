@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import requests
 # Discogs API logic
 import discogs_client
 from discogs_client.exceptions import HTTPError
@@ -136,7 +138,8 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
     return ' '.join(output)
 
 
-def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
+def import_from_discogs(discogs_client, images_folder, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
+    os.makedirs(images_folder, exist_ok=True)
     discogs_user = discogs_client.identity()
     releases = discogs_user.collection_folders[0].releases
 
@@ -204,5 +207,29 @@ def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: Fa
                 release_date=release_date
             )
             imported += 1
+
+        primary_image_url = None
+        if hasattr(release, 'images') and release.images and release.images[0].get('type', '').lower() == 'primary':
+            primary_image_url = release.images[0]['uri']
+
+        existing_uri = getattr(row, 'primary_image_uri', None) if row else None
+
+        if primary_image_url and primary_image_url != existing_uri:
+            headers = {"User-Agent": discogs_client.user_agent}
+            image_path = os.path.join(images_folder, f"{release.id}.jpg")
+
+            for attempt in range(2):  # Try up to 2 times
+                try:
+                    response = requests.get(primary_image_url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    with open(image_path, "wb") as f:
+                        f.write(response.content)
+                    if row:
+                        db_discogs.set_primary_image_uri(
+                            release.id, primary_image_url, callback=callback)
+                    break  # Success, break out of retry loop
+                except Exception as e:
+                    if attempt == 1:
+                        callback(f"Warning: Failed to download image for release {release.id}: {e}")
 
     callback(f'🏁 {imported} new items imported, {updated} items updated.')

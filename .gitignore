@@ -93,3 +93,6 @@ discogs_data/
 
 # Database files
 *.db
+
+# Images downloaded from Discogs
+images/
