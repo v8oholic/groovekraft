@@ -88,6 +88,10 @@ class ReleaseDateEditDialog(QDialog):
         # Calendar for full date selection
         from PyQt6.QtWidgets import QCalendarWidget
         self.calendar = QCalendarWidget()
+        # Restrict calendar to 1900-01-01 .. 2100-12-31
+        from PyQt6.QtCore import QDate
+        self.calendar.setMinimumDate(QDate(1900, 1, 1))
+        self.calendar.setMaximumDate(QDate(2100, 12, 31))
         layout.addWidget(self.calendar)
 
         # Month and Year dropdowns
