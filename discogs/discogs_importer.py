@@ -152,6 +152,7 @@ def import_from_discogs(discogs_client, images_folder, callback=print, should_ca
 
     imported = 0
     updated = 0
+    failed = 0
     total_releases = len(releases)
 
     for index, release_summary in enumerate(releases, start=1):
@@ -162,7 +163,13 @@ def import_from_discogs(discogs_client, images_folder, callback=print, should_ca
         percent = int((index / total_releases) * 100)
         progress_callback(percent)
 
-        release = discogs_client.release(release_summary.id)
+        try:
+            release = discogs_client.release(release_summary.id)
+        except Exception as e:
+            callback(f"❌ Error fetching release {release_summary.id}: {e}")
+            failed += 1
+            continue
+
         callback(f'⚙️ {index}/{total_releases} {discogs_summarise_release(release=release)}')
 
         artist = normalize_artist(release.artists[0].name)
@@ -232,4 +239,4 @@ def import_from_discogs(discogs_client, images_folder, callback=print, should_ca
                     if attempt == 1:
                         callback(f"Warning: Failed to download image for release {release.id}: {e}")
 
-    callback(f'🏁 {imported} new items imported, {updated} items updated.')
+    callback(f'🏁 {imported} new items imported, {updated} items updated, {failed} releases failed.')
