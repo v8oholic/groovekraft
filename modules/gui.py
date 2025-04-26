@@ -332,6 +332,7 @@ class CollectionViewer(QMainWindow):
             self.esc_shortcut.activated.connect(self.close)
 
         def run_import():
+            log_output.clear()
             try:
                 client, access_token, access_secret = discogs_importer.connect_to_discogs(self.cfg)
             except Exception as e:
@@ -350,6 +351,8 @@ class CollectionViewer(QMainWindow):
             def restore_import_button():
                 import_button.setText("Import from Discogs")
                 import_button.setEnabled(True)
+                import_button.setStyleSheet("")
+                enable_tabs_and_escape()
             worker.finished.connect(restore_import_button)
             worker.finished.connect(self.thread.quit)
             worker.finished.connect(worker.deleteLater)
@@ -369,8 +372,9 @@ class CollectionViewer(QMainWindow):
                 if self.worker:
                     self.worker.cancel()
                     log_output.append("Cancelling import...")
+                    import_button.setText("Cancelling...")
                     import_button.setEnabled(False)
-                    enable_tabs_and_escape()
+                    import_button.setStyleSheet("color: gray; font-style: italic;")
 
         import_button.clicked.connect(lambda: on_import_button_clicked())
         return widget
@@ -459,6 +463,7 @@ class CollectionViewer(QMainWindow):
             cancel_button_label = "Cancel match"
 
             if match_button.text() == import_button_label:
+                log_output.clear()
                 creds = db_musicbrainz.get_credentials()
                 if creds:
                     username, password = creds
@@ -499,6 +504,7 @@ class CollectionViewer(QMainWindow):
                     def restore_button():
                         match_button.setText(import_button_label)
                         match_button.setEnabled(True)
+                        match_button.setStyleSheet("")
                     worker.finished.connect(restore_button)
                     worker.finished.connect(enable_tabs_and_escape)
                     worker.run()
@@ -515,6 +521,7 @@ class CollectionViewer(QMainWindow):
                     def restore_button():
                         match_button.setText(import_button_label)
                         match_button.setEnabled(True)
+                        match_button.setStyleSheet("")
                     worker.finished.connect(restore_button)
                     worker.finished.connect(enable_tabs_and_escape)
 
@@ -528,8 +535,9 @@ class CollectionViewer(QMainWindow):
                 if self.mb_worker:
                     self.mb_worker.cancel()
                     log_output.append("Cancelling match...")
+                    match_button.setText("Cancelling...")
                     match_button.setEnabled(False)
-                    enable_tabs_and_escape()
+                    match_button.setStyleSheet("color: gray; font-style: italic;")
 
         match_button.clicked.connect(run_match)
         return widget
