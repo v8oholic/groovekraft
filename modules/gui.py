@@ -154,26 +154,24 @@ class CollectionViewer(QMainWindow):
             if include:
                 rows.append(item)
 
-        table.setColumnCount(5)
+        table.setColumnCount(6)
         table.setHorizontalHeaderLabels(
-            ['Anniversary', 'Artist', 'Title', 'Format', 'Discogs Id', 'Release Date'])
+            ['Anniversary', 'Release Date', 'Artist', 'Title', 'Format', 'Discogs Id'])
         table.setRowCount(len(rows))
 
         for row_idx, (artist, title, format, release_date, discogs_id) in enumerate(rows):
 
             if release_date:
                 table.setItem(row_idx, 0, QTableWidgetItem(utils.humanize_date_delta(release_date)))
-
-            table.setItem(row_idx, 1, QTableWidgetItem(artist))
-            table.setItem(row_idx, 2, QTableWidgetItem(title))
-            table.setItem(row_idx, 3, QTableWidgetItem(format))
-            table.setItem(row_idx, 4, QTableWidgetItem(str(discogs_id)))
-            table.item(row_idx, 4).setTextAlignment(
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-            if release_date:
-                table.setItem(row_idx, 5, QTableWidgetItem(
+                table.setItem(row_idx, 1, QTableWidgetItem(
                     utils.parse_and_humanize_date(release_date)))
+
+            table.setItem(row_idx, 2, QTableWidgetItem(artist))
+            table.setItem(row_idx, 3, QTableWidgetItem(title))
+            table.setItem(row_idx, 4, QTableWidgetItem(format))
+            table.setItem(row_idx, 5, QTableWidgetItem(str(discogs_id)))
+            table.item(row_idx, 5).setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         table.resizeColumnsToContents()
         return widget
