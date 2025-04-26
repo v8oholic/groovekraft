@@ -341,24 +341,64 @@ class CollectionViewer(QMainWindow):
 
     def create_randomiser_tab(self):
         widget = QWidget()
-        layout = QHBoxLayout(widget)
+        main_layout = QVBoxLayout(widget)
 
-        # Add image display
+        # Title centered at the very top
+        title_label = QLabel("🎲 Random Release")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
+        main_layout.addWidget(title_label)
+
+        layout = QHBoxLayout()
+        main_layout.addLayout(layout)
+
+        # Left side (Image only)
+        left_layout = QVBoxLayout()
+
         self.image_label = QLabel()
-        self.image_label.setFixedSize(300, 300)
+        self.image_label.setFixedSize(400, 400)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.image_label)
+        left_layout.addWidget(self.image_label)
 
-        # Release details next to the image
+        layout.addLayout(left_layout)
+
+        # Right side (Details only)
         right_layout = QVBoxLayout()
 
         self.detail_widget = ReleaseDetailWidget()
         right_layout.addWidget(self.detail_widget)
 
-        random_button = QPushButton("Randomise")
-        right_layout.addWidget(random_button)
+        # random_button will be moved outside right_layout
+        random_button = QPushButton("🎲 Randomise")
+        # Improved appearance: button with rounded corners, blue background, white text, and hover effect
+        random_button.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                padding: 10px 20px;
+                border: 2px solid #3498db;
+                border-radius: 10px;
+                background-color: #2980b9;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #3498db;
+            }
+        """)
+        # right_layout.addWidget(random_button)  # Removed from right_layout
 
-        layout.addLayout(right_layout)
+        wrapper_layout = QVBoxLayout()
+        wrapper_layout.addStretch()
+        wrapper_layout.addLayout(right_layout)
+        wrapper_layout.addStretch()
+
+        layout.addLayout(wrapper_layout)
+
+        # Add Randomise button centered at the bottom
+        random_button_layout = QHBoxLayout()
+        random_button_layout.addStretch()
+        random_button_layout.addWidget(random_button)
+        random_button_layout.addStretch()
+        main_layout.addLayout(random_button_layout)
 
         def load_random_item():
             with db.context_manager() as cur:
@@ -385,9 +425,7 @@ class CollectionViewer(QMainWindow):
                         self.image_label.clear()
 
         random_button.clicked.connect(load_random_item)
-
         load_random_item()
-
         return widget
 
     def create_discogs_importer_tab(self):
@@ -404,6 +442,19 @@ class CollectionViewer(QMainWindow):
         layout.addWidget(progress_bar)
 
         import_button = QPushButton("Import from Discogs")
+        import_button.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                padding: 10px 20px;
+                border: 2px solid #3498db;
+                border-radius: 10px;
+                background-color: #2980b9;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #3498db;
+            }
+        """)
         layout.addWidget(import_button)
 
         # --- Helper functions to enable/disable all tabs and adjust Escape key ---
@@ -493,6 +544,19 @@ class CollectionViewer(QMainWindow):
         layout.addWidget(progress_bar)
 
         match_button = QPushButton("Match in MusicBrainz")
+        match_button.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                padding: 10px 20px;
+                border: 2px solid #3498db;
+                border-radius: 10px;
+                background-color: #2980b9;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #3498db;
+            }
+        """)
         layout.addWidget(match_button)
 
         # --- Helper functions to enable/disable all tabs and adjust Escape key ---
