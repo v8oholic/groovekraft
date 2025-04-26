@@ -137,24 +137,30 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
 
 
 def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
-
-    # fetch the identity object for the current logged in user.
     discogs_user = discogs_client.identity()
-
     releases = discogs_user.collection_folders[0].releases
-    callback(f'number of items in all collections: {len(releases)}')
 
-    for index, release in enumerate(releases):
+    if not releases:
+        callback("No releases found in the Discogs collection.")
+        progress_callback(100)
+        return
 
+    callback(f'Number of items in all collections: {len(releases)}')
+
+    imported = 0
+    updated = 0
+    total_releases = len(releases)
+
+    for index, release_summary in enumerate(releases, start=1):
         if should_cancel():
             callback("Import cancelled.")
             return
 
-        percent = int(((index + 1) / len(releases)) * 100)
+        percent = int((index / total_releases) * 100)
         progress_callback(percent)
 
-        release = discogs_client.release(release.id)
-        callback(f'⚙️ {index+1}/{len(releases)} {discogs_summarise_release(release=release)}')
+        release = discogs_client.release(release_summary.id)
+        callback(f'⚙️ {index}/{total_releases} {discogs_summarise_release(release=release)}')
 
         artist = normalize_artist(release.artists[0].name)
         title = normalize_title(release.title)
@@ -162,28 +168,28 @@ def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: Fa
         country = normalize_country(release.country)
         barcodes = normalize_barcodes(release.fetch('identifiers'))
         catnos = normalize_catnos(release.labels)
-        year = release.year if release.year else None
-        master_id = release.master.id if release.master is not None else 0
+        year = release.year or None
+        master_id = release.master.id if release.master else 0
 
         row = db_discogs.fetch_row(release.id)
+        release_date = utils.earliest_date(row.release_date if row else None, year)
 
         if row:
-            release_date = utils.earliest_date(row.release_date, year)
-
             db_discogs.set_artist(release.id, artist, callback=callback)
             db_discogs.set_title(release.id, title, callback=callback)
             db_discogs.set_format(release.id, format, callback=callback)
             db_discogs.set_country(release.id, country, callback=callback)
-            db_discogs.set_barcodes(release.id, barcodes if barcodes else None, callback=callback)
-            db_discogs.set_catnos(release.id, catnos if catnos else None, callback=callback)
+            db_discogs.set_barcodes(release.id, barcodes or None, callback=callback)
+            db_discogs.set_catnos(release.id, catnos or None, callback=callback)
             db_discogs.set_year(release.id, year, callback=callback)
             db_discogs.set_master_id(release.id, master_id, callback=callback)
             db_discogs.set_release_date(release.id, release_date, callback=callback)
+
             if not row.sort_name:
                 db_discogs.set_sort_name(release.id, artist, callback=callback)
 
+            updated += 1
         else:
-
             db_discogs.insert_row(
                 discogs_id=release.id,
                 artist=artist,
@@ -191,8 +197,12 @@ def import_from_discogs(discogs_client, callback=print, should_cancel=lambda: Fa
                 format=format,
                 country=country,
                 year=year,
-                barcodes=barcodes if barcodes else None,
-                catnos=catnos if catnos else None,
+                barcodes=barcodes or None,
+                catnos=catnos or None,
                 master_id=master_id,
                 sort_name=artist,
-                release_date=utils.earliest_date(None, year))
+                release_date=release_date
+            )
+            imported += 1
+
+    callback(f'🏁 {imported} new items imported, {updated} items updated.')

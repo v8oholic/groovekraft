@@ -1,3 +1,8 @@
+from modules import db, utils
+import musicbrainz.db_musicbrainz as db_musicbrainz
+from modules.config import AppConfig
+from musicbrainz import mb_matcher, mb_auth_gui
+from discogs import discogs_importer
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem,
     QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar, QDialog, QCheckBox
@@ -10,12 +15,15 @@ import musicbrainzngs
 import sys
 from types import SimpleNamespace
 
-from modules import db, utils
-from discogs import discogs_importer
-from musicbrainz import mb_matcher, mb_auth_gui
-from modules.config import AppConfig
+# Helper function to check if running under debugger
 
-import musicbrainz.db_musicbrainz as db_musicbrainz
+
+def is_debugging():
+    return hasattr(sys, 'gettrace') and sys.gettrace()
+
+
+# Set DEBUG_MODE once at module load for easy access throughout the app
+DEBUG_MODE = is_debugging()
 
 
 class ReleaseDetailWidget(QWidget):
@@ -423,6 +431,13 @@ class CollectionViewer(QMainWindow):
                 self._cancel_requested = True
 
             def run(self):
+                if is_debugging():
+                    try:
+                        import debugpy
+                        debugpy.debug_this_thread()
+                    except ImportError:
+                        pass
+
                 try:
                     musicbrainzngs.set_useragent(
                         app=self.cfg.user_agent, version=self.cfg.app_version)
@@ -467,34 +482,47 @@ class CollectionViewer(QMainWindow):
                 cfg.app_version = self.cfg.app_version
                 cfg.username = username
                 cfg.password = password
-                # Add match_all from checkbox
                 cfg.match_all = match_all_checkbox.isChecked()
 
-                self.mb_thread = QThread()
                 worker = MBMatcherWorker(cfg)
                 self.mb_worker = worker
-                worker.moveToThread(self.mb_thread)
 
-                worker.progress_msg.connect(lambda msg: log_output.append(msg))
-                worker.progress.connect(progress_bar.setValue)
-                worker.finished.connect(self.mb_thread.quit)
-                worker.finished.connect(worker.deleteLater)
-                self.mb_thread.finished.connect(self.mb_thread.deleteLater)
-                # Replace lambda with restore_button, which sets text and enables button
+                # Insert debugging check: if debugging, run worker.run() directly; else, use QThread
+                if is_debugging():
+                    # Disable tabs and Escape when match is started
+                    match_button.setText(cancel_button_label)
+                    disable_tabs_and_escape()
+                    # Connect signals (simulate, since no thread)
+                    worker.progress_msg.connect(lambda msg: log_output.append(msg))
+                    worker.progress.connect(progress_bar.setValue)
 
-                def restore_button():
-                    match_button.setText(import_button_label)
-                    match_button.setEnabled(True)
-                worker.finished.connect(restore_button)
-                # Enable tabs and Escape when match is finished
-                worker.finished.connect(enable_tabs_and_escape)
+                    def restore_button():
+                        match_button.setText(import_button_label)
+                        match_button.setEnabled(True)
+                    worker.finished.connect(restore_button)
+                    worker.finished.connect(enable_tabs_and_escape)
+                    worker.run()
+                else:
+                    self.mb_thread = QThread()
+                    worker.moveToThread(self.mb_thread)
 
-                self.mb_thread.started.connect(worker.run)
-                self.mb_thread.start()
+                    worker.progress_msg.connect(lambda msg: log_output.append(msg))
+                    worker.progress.connect(progress_bar.setValue)
+                    worker.finished.connect(self.mb_thread.quit)
+                    worker.finished.connect(worker.deleteLater)
+                    self.mb_thread.finished.connect(self.mb_thread.deleteLater)
 
-                match_button.setText(cancel_button_label)
-                # Disable tabs and Escape when match is started
-                disable_tabs_and_escape()
+                    def restore_button():
+                        match_button.setText(import_button_label)
+                        match_button.setEnabled(True)
+                    worker.finished.connect(restore_button)
+                    worker.finished.connect(enable_tabs_and_escape)
+
+                    self.mb_thread.started.connect(worker.run)
+                    self.mb_thread.start()
+
+                    match_button.setText(cancel_button_label)
+                    disable_tabs_and_escape()
 
             else:
                 if self.mb_worker:

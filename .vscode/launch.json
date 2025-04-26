@@ -5,6 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python: GUI Debugging",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "redirectOutput": true,
+            "justMyCode": false,
+            "subProcess": true,
+            "env": {
+              "PYDEVD_USE_FRAME_EVAL": "NO"
+            }
+        },
+        {
             "name": "Main with Arguments",
             "type": "debugpy",
             "request": "launch",

@@ -907,12 +907,11 @@ def match_release_in_musicbrainz(discogs_id, callback=print):
 
         mb_release_group, mb_release = get_release_and_release_group(mb_release=mb_release)
 
-        update_tables_after_match(
+        return update_tables_after_match(
             discogs_id=discogs_id,
             mb_release=mb_release,
             mb_release_group=mb_release_group,
             best_match_score=PERFECT_SCORE)
-        return
 
     if row.master_id:
         # try the master release to release group link
@@ -946,10 +945,7 @@ def match_release_in_musicbrainz(discogs_id, callback=print):
         score=best_match_score,
         callback=callback)
 
-    if best_match_score < MINIMUM_SCORE:
-        return
-
-    update_tables_after_match(
+    return update_tables_after_match(
         discogs_id=discogs_id,
         mb_release=mb_release,
         mb_release_group=mb_release_group,
@@ -1025,12 +1021,8 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
 
     if mb_release is None:
         # nothing further can be done with this release
-        with db.context_manager() as cur:
-            cur.execute("""
-                DELETE FROM mb_matches
-                WHERE discogs_id = ?""", (discogs_id))
-
-        return
+        db_musicbrainz.delete_match(discogs_id=discogs_id, callback=callback)
+        return False
 
     if not all([
         mb_release.get('label-info-count'),
@@ -1113,53 +1105,56 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
             score=best_match_score,
             primary_type=primary_type)
 
+    return True
+
 
 def match_discogs_against_mb(callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None, match_all=False):
-
-    # Authentication and useragent setup removed as per instructions.
-
     rows = db_discogs.fetch_discogs_release_rows()
 
-    for index, row in enumerate(rows):
+    if not rows:
+        callback("No Discogs releases found.")
+        progress_callback(100)
+        return
 
+    matches_attempted = 0
+    matches_succeeded = 0
+    total_rows = len(rows)
+
+    for index, row in enumerate(rows, start=1):
         if should_cancel():
-            callback("Match cancelled.")
+            callback("❌ Match cancelled.")
             return
 
-        percent = int(((index + 1) / len(rows)) * 100)
+        percent = int((index / total_rows) * 100)
         progress_callback(percent)
 
-        match_row = False
+        mb_row = db_musicbrainz.fetch_row(row.discogs_id) if not match_all else None
 
-        if match_all:
-            match_row = True
-        else:
-            mb_row = db_musicbrainz.fetch_row(row.discogs_id)
-            if not mb_row:
-                match_row = True
-            else:
-                if row.updated_at is None or mb_row.matched_at is None:
-                    match_row = True
-                elif row.updated_at > mb_row.matched_at:
-                    match_row = True
+        match_row = (
+            match_all
+            or not mb_row
+            or row.updated_at is None
+            or mb_row.matched_at is None
+            or row.updated_at > mb_row.matched_at
+        )
 
-        if match_row:
-            if match_all:
-                callback(
-                    f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)} (matching all)')
-            else:
-                mb_row = db_musicbrainz.fetch_row(row.discogs_id)
-                if not mb_row:
-                    callback(
-                        f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)} (unmatched)')
-                elif row.updated_at is None or mb_row.matched_at is None:
-                    callback(
-                        f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)} (timestamps missing)')
-                elif row.updated_at > mb_row.matched_at:
-                    callback(
-                        f'⚙️ {index+1}/{len(rows)} {db.db_summarise_row(row.discogs_id)} (updated since matched)')
+        if not match_row:
+            continue
 
-            match_release_in_musicbrainz(row.discogs_id, callback=callback)
+        matches_attempted += 1
+
+        status = "matching all" if match_all else (
+            "unmatched" if not mb_row else (
+                "timestamps missing" if row.updated_at is None or mb_row.matched_at is None else
+                "updated since matched"
+            )
+        )
+        callback(f'⚙️ {index}/{total_rows} {db.db_summarise_row(row.discogs_id)} ({status})')
+
+        if match_release_in_musicbrainz(row.discogs_id, callback=callback):
+            matches_succeeded += 1
+
+    callback(f'🏁 {matches_attempted} matches attempted, {matches_succeeded} succeeded.')
 
 
 def mb_get_artist(artist, callback=print):

@@ -6,6 +6,13 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %
 logger = logging.getLogger(__name__)
 
 
+def delete_match(discogs_id, callback=print):
+    with db.context_manager() as cur:
+        cur.execute("""
+            DELETE FROM mb_matches
+            WHERE discogs_id = ? """, (discogs_id,))
+
+
 def update_field_if_changed(discogs_id, field_name, new_value, callback=print):
     with db.context_manager() as cur:
         cur.execute(f"""
