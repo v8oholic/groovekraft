@@ -70,9 +70,10 @@ class CollectionViewer(QMainWindow):
         finished = pyqtSignal()
         progress = pyqtSignal(int)
 
-        def __init__(self, client):
+        def __init__(self, client, cfg):
             super().__init__()
             self.client = client
+            self.cfg = cfg
             self._cancel_requested = False
 
         def cancel(self):
@@ -86,7 +87,7 @@ class CollectionViewer(QMainWindow):
             try:
                 discogs_importer.import_from_discogs(
                     discogs_client=self.client,
-                    images_folder=self.parent().cfg.images_folder,
+                    images_folder=self.cfg.images_folder,
                     callback=emit_msg,
                     should_cancel=lambda: self._cancel_requested,
                     progress_callback=lambda pct: self.progress.emit(pct)
@@ -347,7 +348,7 @@ class CollectionViewer(QMainWindow):
             import_button.setText("Cancel Import")
 
             self.thread = QThread()
-            worker = CollectionViewer.DiscogsImportWorker(client)
+            worker = CollectionViewer.DiscogsImportWorker(client, self.cfg)
             self.worker = worker  # keep reference
             worker.moveToThread(self.thread)
 
