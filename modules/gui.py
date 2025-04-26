@@ -243,15 +243,16 @@ class CollectionViewer(QMainWindow):
                 cur.execute(' '.join(query))
                 rows = cur.fetchall()
 
-            table.setColumnCount(8)
+            # Update table columns and headers to new format
+            table.setColumnCount(5)
             table.setHorizontalHeaderLabels(
-                ['Thumbnail', 'Artist', 'Title', 'Format', 'Country', 'Release Date', 'Discogs Id', 'Matched'])
+                ['Thumbnail', 'Details', 'Release Date', 'Discogs Id', 'Matched'])
             table.setRowCount(len(rows))
             # Set row height to fit thumbnails
             table.verticalHeader().setDefaultSectionSize(110)
 
             for row_idx, (sort_name, artist, title, format, country, release_date, discogs_id, mbid) in enumerate(rows):
-                # Load and set the thumbnail
+                # Column 0: Thumbnail
                 image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
                 if os.path.exists(image_path):
                     from PyQt6.QtGui import QPixmap
@@ -260,17 +261,26 @@ class CollectionViewer(QMainWindow):
                                            Qt.TransformationMode.SmoothTransformation)
                     thumbnail_item = QTableWidgetItem()
                     thumbnail_item.setData(Qt.ItemDataRole.DecorationRole, pixmap)
+                    thumbnail_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     table.setItem(row_idx, 0, thumbnail_item)
 
-                table.setItem(row_idx, 1, QTableWidgetItem(artist))
-                table.setItem(row_idx, 2, QTableWidgetItem(title))
-                table.setItem(row_idx, 3, QTableWidgetItem(format))
-                table.setItem(row_idx, 4, QTableWidgetItem(country))
-                table.setItem(row_idx, 5, QTableWidgetItem(release_date))
-                table.setItem(row_idx, 6, QTableWidgetItem(str(discogs_id)))
-                table.item(row_idx, 6).setTextAlignment(
+                # Column 1: Details (QLabel with HTML)
+                details_html = f"<b>{title}</b><br>{artist}<br>{format}<br>{country}"
+                details_label = QLabel()
+                details_label.setText(details_html)
+                details_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
+                                           Qt.AlignmentFlag.AlignVCenter)
+                details_label.setWordWrap(True)
+                table.setCellWidget(row_idx, 1, details_label)
+
+                # Column 2: Release Date
+                table.setItem(row_idx, 2, QTableWidgetItem(release_date))
+                # Column 3: Discogs Id
+                table.setItem(row_idx, 3, QTableWidgetItem(str(discogs_id)))
+                table.item(row_idx, 3).setTextAlignment(
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                table.setItem(row_idx, 7, QTableWidgetItem("Yes" if mbid else "No"))
+                # Column 4: Matched
+                table.setItem(row_idx, 4, QTableWidgetItem("Yes" if mbid else "No"))
 
             table.resizeColumnsToContents()
 
