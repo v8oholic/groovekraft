@@ -1,13 +1,13 @@
 #!/bin/zsh
 
-# launch script for Discogs app
+# launch script for GrooveKraft app
 # Conda environment (if appropriate) is derived from the python location
 #
 # To publish:
 #
-# ./discogs.sh --publish
+# ./groovekraft.sh --publish
 #
-# This will create (or update) a symlink at ~/bin/discogs pointing to this script.
+# This will create (or update) a symlink at ~/bin/groovekraft pointing to this script.
 #
 # Make sure ~/bin is in your PATH by adding this to your ~/.zshrc if needed:
 # export PATH="$HOME/bin:$PATH"
@@ -19,16 +19,16 @@
 #
 # Now you can verify the link works with:
 #
-# which discogs
+# which groovekraft
 #
 # You can invoke the app from anywhere in a shell like this:
 #
-# discogs
+# groovekraft
 #
 # arguments may be specified.
 
-APP_PYTHON=/opt/homebrew/Caskroom/miniforge/base/envs/discogs/bin/python
-APP_MAIN="$HOME/Applications/Python/Discogs/main.py"
+APP_PYTHON=/opt/homebrew/Caskroom/miniforge/base/envs/groovekraft/bin/python
+APP_MAIN="$HOME/Applications/Python/GrooveKraft/groovekraft.py"
 
 # Determine application directory from APP_MAIN
 APP_DIR=$(dirname "$APP_MAIN")
@@ -41,12 +41,12 @@ trap 'cd "$OLD_DIR"' EXIT
 
 # Handle self-publishing
 if [[ "$1" == "--publish" ]]; then
-  echo "Publishing discogs to ~/bin/discogs..."
+  echo "Publishing groovekraft to ~/bin/groovekraft..."
   mkdir -p ~/bin
   SCRIPT_PATH=$(realpath "$0")
   chmod +x "$SCRIPT_PATH"
-  ln -sf "$SCRIPT_PATH" ~/bin/discogs
-  echo "Symlink created: ~/bin/discogs -> $SCRIPT_PATH"
+  ln -sf "$SCRIPT_PATH" ~/bin/groovekraft
+  echo "Symlink created: ~/bin/groovekraft -> $SCRIPT_PATH"
   echo
 
   # Check if ~/bin is in PATH
@@ -78,9 +78,9 @@ fi
 
 # Run the application, forwarding all arguments
 if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-  echo "Usage: discogs [options] [arguments]"
+  echo "Usage: groovekraft [options] [arguments]"
   echo "Options:"
-  echo "  --publish     Install or update the discogs command in ~/bin"
+  echo "  --publish     Install or update the groovekraft command in ~/bin"
   echo "  -h, --help    Show this help message"
   echo
   echo "All other arguments are passed to the Python app."

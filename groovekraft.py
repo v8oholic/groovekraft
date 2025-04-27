@@ -61,13 +61,11 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     parser = argparse.ArgumentParser(
-        description="Music Collection Importer",
-        epilog="Import from Discogs skips previously imported releases. Update from MusicBrainz processes only previously imported releases."
+        description="GrooveKraft",
+        epilog="Import from Discogs, match against MusicBrainz, view collection locally."
     )
 
     # autopep8: off
-    parser.add_argument('--init', required=False, action='store_true', help='initialise database')
-    parser.add_argument('--gui', required=False, action='store_true', help='launch experimental PyQt6 GUI')
     parser.add_argument("--database", type=str, help="Path to the SQLite database file")
     parser.add_argument('--verbose', required=False, action='store_true', help='verbose messages')
     # autopep8: on

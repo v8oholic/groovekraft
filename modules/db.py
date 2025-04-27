@@ -8,7 +8,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.join("database", "discogs.db")
+DB_PATH = os.path.join("database", "groovekraft.db")
 
 CREATE_DISCOGS_RELEASES_TABLE = """
     CREATE TABLE IF NOT EXISTS discogs_releases (

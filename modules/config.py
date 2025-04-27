@@ -2,7 +2,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-APP_VERSION = '0.2'
+APP_VERSION = '1.0'
 
 
 class AppConfig:
@@ -10,7 +10,7 @@ class AppConfig:
 
         self.verbose = args.verbose
         self.database_name = args.database or "local.db"
-        self.user_agent = 'v8oholic_collection_application/1.0'
+        self.user_agent = 'groovekraft_by_v8oholic/1.0'
         self.consumer_key = None
         self.consumer_secret = None
         self.oauth_token = None

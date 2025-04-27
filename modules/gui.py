@@ -219,7 +219,7 @@ class CollectionViewer(QMainWindow):
 
     def __init__(self, cfg: AppConfig):
         super().__init__()
-        self.setWindowTitle("Collection Viewer")
+        self.setWindowTitle("GrooveKraft")
         self.cfg = cfg
         if not hasattr(self.cfg, "images_folder"):
             self.cfg.images_folder = os.path.join(self.cfg.root_folder, "images")
