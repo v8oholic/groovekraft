@@ -75,8 +75,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config_parser = configparser.ConfigParser()
-    if not config_parser.read("discogs.ini"):
-        print("Error: Could not find discogs.ini configuration file. Are you running from the application directory?")
+    if not config_parser.read("groovekraft.ini"):
+        print("Error: Could not find groovekraft.ini configuration file. Are you running from the application directory?")
         sys.exit(1)
 
     config = AppConfig(args, os.path.dirname(os.path.abspath(__file__)))

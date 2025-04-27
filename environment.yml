@@ -1,4 +1,4 @@
-name: discogs
+name: groovekraft
 channels:
   - conda-forge
 dependencies:
@@ -65,10 +65,14 @@ dependencies:
   - zstandard=0.23.0=py311h917b07b_1
   - pip:
       - charset-normalizer==3.4.1
+      - debugpy==1.8.14
       - oauthlib==3.2.2
       - packaging==24.2
+      - pyqt6==6.9.0
+      - pyqt6-qt6==6.9.0
+      - pyqt6-sip==13.10.0
       - python-dotenv==1.1.0
       - python3-discogs-client==2.8
       - requests==2.32.3
       - webdriver-manager==4.0.2
-prefix: /opt/homebrew/Caskroom/miniforge/base/envs/discogs
+prefix: /opt/homebrew/Caskroom/miniforge/base/envs/groovekraft
