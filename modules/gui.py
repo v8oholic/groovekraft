@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QDialogButtonBox
 from modules import db, utils
 import musicbrainz.db_musicbrainz as db_musicbrainz
-from modules.config import AppConfig
+from modules.config import AppConfig, GROOVEKRAFT_USER_AGENT, GROOVEKRAFT_VERSION
 from musicbrainz import mb_matcher, mb_auth_gui
 from discogs import discogs_importer
 from PyQt6.QtWidgets import (
@@ -23,6 +23,23 @@ from types import SimpleNamespace
 
 def is_debugging():
     return hasattr(sys, 'gettrace') and sys.gettrace()
+
+
+# Centralized button stylesheet for consistent look
+def get_default_button_stylesheet():
+    return """
+        QPushButton {
+            font-size: 16px;
+            padding: 10px 20px;
+            border: 2px solid #3498db;
+            border-radius: 10px;
+            background-color: #2980b9;
+            color: white;
+        }
+        QPushButton:hover {
+            background-color: #3498db;
+        }
+    """
 
 
 # Set DEBUG_MODE once at module load for easy access throughout the app
@@ -531,20 +548,7 @@ class CollectionViewer(QMainWindow):
 
         # random_button will be moved outside right_layout
         random_button = QPushButton("🎲 Randomise")
-        # Improved appearance: button with rounded corners, blue background, white text, and hover effect
-        random_button.setStyleSheet("""
-            QPushButton {
-                font-size: 16px;
-                padding: 10px 20px;
-                border: 2px solid #3498db;
-                border-radius: 10px;
-                background-color: #2980b9;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #3498db;
-            }
-        """)
+        random_button.setStyleSheet(get_default_button_stylesheet())
         # right_layout.addWidget(random_button)  # Removed from right_layout
 
         wrapper_layout = QVBoxLayout()
@@ -603,19 +607,7 @@ class CollectionViewer(QMainWindow):
         layout.addWidget(progress_bar)
 
         import_button = QPushButton("Import from Discogs")
-        import_button.setStyleSheet("""
-            QPushButton {
-                font-size: 16px;
-                padding: 10px 20px;
-                border: 2px solid #3498db;
-                border-radius: 10px;
-                background-color: #2980b9;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #3498db;
-            }
-        """)
+        import_button.setStyleSheet(get_default_button_stylesheet())
         layout.addWidget(import_button)
 
         # --- Helper functions to enable/disable all tabs and adjust Escape key ---
@@ -656,7 +648,7 @@ class CollectionViewer(QMainWindow):
             def restore_import_button():
                 import_button.setText("Import from Discogs")
                 import_button.setEnabled(True)
-                import_button.setStyleSheet("")
+                import_button.setStyleSheet(get_default_button_stylesheet())
                 enable_tabs_and_escape()
             worker.finished.connect(restore_import_button)
             worker.finished.connect(self.thread.quit)
@@ -679,7 +671,7 @@ class CollectionViewer(QMainWindow):
                     log_output.append("Cancelling import...")
                     import_button.setText("Cancelling...")
                     import_button.setEnabled(False)
-                    import_button.setStyleSheet("color: gray; font-style: italic;")
+                    import_button.setStyleSheet(get_default_button_stylesheet())
 
         import_button.clicked.connect(lambda: on_import_button_clicked())
         return widget
@@ -705,19 +697,7 @@ class CollectionViewer(QMainWindow):
         layout.addWidget(progress_bar)
 
         match_button = QPushButton("Match in MusicBrainz")
-        match_button.setStyleSheet("""
-            QPushButton {
-                font-size: 16px;
-                padding: 10px 20px;
-                border: 2px solid #3498db;
-                border-radius: 10px;
-                background-color: #2980b9;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #3498db;
-            }
-        """)
+        match_button.setStyleSheet(get_default_button_stylesheet())
         layout.addWidget(match_button)
 
         # --- Helper functions to enable/disable all tabs and adjust Escape key ---
@@ -762,7 +742,7 @@ class CollectionViewer(QMainWindow):
 
                 try:
                     musicbrainzngs.set_useragent(
-                        app=self.cfg.user_agent, version=self.cfg.app_version)
+                        app=GROOVEKRAFT_USER_AGENT, version=GROOVEKRAFT_VERSION)
                     musicbrainzngs.auth(self.cfg.username, self.cfg.password)
                     musicbrainzngs.set_rate_limit(1, 1)
 
@@ -786,8 +766,9 @@ class CollectionViewer(QMainWindow):
                 if creds:
                     username, password = creds
                     try:
-                        musicbrainzngs.set_useragent(app=self.cfg.user_agent,
-                                                     version=self.cfg.app_version)
+                        musicbrainzngs.set_useragent(
+                            app=GROOVEKRAFT_USER_AGENT,
+                            version=GROOVEKRAFT_VERSION)
                         musicbrainzngs.auth(username, password)
                     except Exception:
                         creds = None
@@ -801,8 +782,6 @@ class CollectionViewer(QMainWindow):
                         return
 
                 cfg = SimpleNamespace()
-                cfg.user_agent = self.cfg.user_agent
-                cfg.app_version = self.cfg.app_version
                 cfg.username = username
                 cfg.password = password
                 cfg.match_all = match_all_checkbox.isChecked()
@@ -822,7 +801,7 @@ class CollectionViewer(QMainWindow):
                     def restore_button():
                         match_button.setText(import_button_label)
                         match_button.setEnabled(True)
-                        match_button.setStyleSheet("")
+                        match_button.setStyleSheet(get_default_button_stylesheet())
                     worker.finished.connect(restore_button)
                     worker.finished.connect(enable_tabs_and_escape)
                     worker.run()
@@ -839,7 +818,7 @@ class CollectionViewer(QMainWindow):
                     def restore_button():
                         match_button.setText(import_button_label)
                         match_button.setEnabled(True)
-                        match_button.setStyleSheet("")
+                        match_button.setStyleSheet(get_default_button_stylesheet())
                     worker.finished.connect(restore_button)
                     worker.finished.connect(enable_tabs_and_escape)
 
@@ -855,7 +834,7 @@ class CollectionViewer(QMainWindow):
                     log_output.append("Cancelling match...")
                     match_button.setText("Cancelling...")
                     match_button.setEnabled(False)
-                    match_button.setStyleSheet("color: gray; font-style: italic;")
+                    match_button.setStyleSheet(get_default_button_stylesheet())
 
         match_button.clicked.connect(run_match)
         return widget

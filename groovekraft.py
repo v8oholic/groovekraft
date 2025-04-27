@@ -24,38 +24,6 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-if False:
-    # With an active auth token, we're able to reuse the client object and request
-    # additional discogs authenticated endpoints, such as database search.
-    search_results = discogs_client.search(
-        "House For All", type="release", artist="Blunted Dummies"
-    )
-
-    print("\n== Search results for release_title=House For All ==")
-    for release in search_results:
-        print(f"\n\t== discogs-id {release.id} ==")
-        print(f'\tArtist\t: {", ".join(artist.name for artist in release.artists)}')
-        print(f"\tTitle\t: {release.title}")
-        print(f"\tYear\t: {release.year}")
-        print(f'\tLabels\t: {", ".join(label.name for label in release.labels)}')
-
-    # You can reach into the Fetcher lib if you wish to used the wrapped requests
-    # library to download an image. The following example demonstrates this.
-    image = search_results[0].images[0]["uri"]
-    content, resp = discogs_client._fetcher.fetch(
-        None, "GET", image, headers={"User-agent": discogs_client.user_agent}
-    )
-
-    print(" == API image request ==")
-    print(f"    * response status      = {resp}")
-    print(f'    * saving image to disk = {image.split("/")[-1]}')
-
-    with open(image.split("/")[-1], "wb") as fh:
-        fh.write(content)
-
-# x = dir(discogs_client.release('9459125'))
-# print(x)
-
 if __name__ == "__main__":
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -73,9 +41,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config_parser = configparser.ConfigParser()
-    if not config_parser.read("groovekraft.ini"):
-        print("Error: Could not find groovekraft.ini configuration file. Are you running from the application directory?")
-        sys.exit(1)
+    # if not config_parser.read("groovekraft.ini"):
+    #     print("Error: Could not find groovekraft.ini configuration file. Are you running from the application directory?")
+    #     sys.exit(1)
 
     config = AppConfig(args, os.path.dirname(os.path.abspath(__file__)))
     config.load_from_config_parser(config_parser)

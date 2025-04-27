@@ -5,17 +5,15 @@ import requests
 # Discogs API logic
 import discogs_client
 from discogs_client.exceptions import HTTPError
+import json
 
 from discogs import db_discogs
 from modules import utils
 from discogs.discogs_oauth_gui import prompt_oauth_verifier_gui
-
+from modules.config import DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, GROOVEKRAFT_USER_AGENT
 import logging
 
 logger = logging.getLogger(__name__)
-
-DISCOGS_CONSUMER_KEY = 'yEJrrZEZrExGHEPjNQca'
-DISCOGS_CONSUMER_SECRET = 'isFjruJTfmmXFXiaywRqCUSkIGwHlHKn'
 
 
 def connect_to_discogs(config):
@@ -31,9 +29,9 @@ def connect_to_discogs(config):
     if oauth_token and oauth_token_secret:
         try:
             client = discogs_client.Client(
-                config.user_agent,
-                consumer_key=config.consumer_key,
-                consumer_secret=config.consumer_secret,
+                GROOVEKRAFT_USER_AGENT,
+                consumer_key=DISCOGS_CONSUMER_KEY,
+                consumer_secret=DISCOGS_CONSUMER_SECRET,
                 token=oauth_token,
                 secret=oauth_token_secret
             )
@@ -50,10 +48,10 @@ def connect_to_discogs(config):
     if not authenticated:
 
         # instantiate discogs_client object
-        client = discogs_client.Client(user_agent=config.user_agent)
+        client = discogs_client.Client(user_agent=GROOVEKRAFT_USER_AGENT)
 
         # prepare the client with our API consumer data
-        client.set_consumer_key(config.consumer_key, config.consumer_secret)
+        client.set_consumer_key(DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET)
         token, secret, url = client.get_authorize_url()
 
         logger.debug(" == Request Token == ")
@@ -165,6 +163,10 @@ def import_from_discogs(discogs_client, images_folder, callback=print, should_ca
 
         try:
             release = discogs_client.release(release_summary.id)
+        except json.decoder.JSONDecodeError as e:
+            callback(f"❌ JSON error fetching release {release_summary.id}: {e}")
+            failed += 1
+            continue
         except Exception as e:
             callback(f"❌ Error fetching release {release_summary.id}: {e}")
             failed += 1

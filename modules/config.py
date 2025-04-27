@@ -4,13 +4,17 @@ logger = logging.getLogger(__name__)
 
 APP_VERSION = '1.0'
 
+GROOVEKRAFT_USER_AGENT = 'groovekraft_by_v8oholic/1.0'
+GROOVEKRAFT_VERSION = '1.0'
+
+DISCOGS_CONSUMER_KEY = 'yEJrrZEZrExGHEPjNQca'
+DISCOGS_CONSUMER_SECRET = 'isFjruJTfmmXFXiaywRqCUSkIGwHlHKn'
+
 
 class AppConfig:
     def __init__(self, args, root_folder):
 
         self.verbose = args.verbose
-        self.database_name = args.database or "local.db"
-        self.user_agent = 'groovekraft_by_v8oholic/1.0'
         self.consumer_key = None
         self.consumer_secret = None
         self.oauth_token = None
@@ -27,6 +31,3 @@ class AppConfig:
         self.oauth_token_secret = config_parser.get('Discogs', 'oauth_token_secret', fallback=None)
         self.username = config_parser.get('MusicBrainz', 'username', fallback=None)
         self.password = config_parser.get('MusicBrainz', 'password', fallback=None)
-        self.user_agent = config_parser.get('Common', 'user_agent', fallback=self.user_agent)
-        self.database_name = config_parser.get(
-            'Common', 'database_name', fallback=self.database_name)
