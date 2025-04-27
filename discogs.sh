@@ -44,8 +44,8 @@ if [[ "$1" == "--publish" ]]; then
   echo "Publishing discogs to ~/bin/discogs..."
   mkdir -p ~/bin
   SCRIPT_PATH=$(realpath "$0")
-  ln -sf "$SCRIPT_PATH" ~/bin/discogs
   chmod +x "$SCRIPT_PATH"
+  ln -sf "$SCRIPT_PATH" ~/bin/discogs
   echo "Symlink created: ~/bin/discogs -> $SCRIPT_PATH"
   echo
 
