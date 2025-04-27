@@ -1,8 +1,19 @@
-# conda install -c conda-forge rapidfuzz
-# or
-# pip install rapidfuzz
+# homebrew (probably)
+# https://brew.sh
 
-python
+# python (definitely)
+# ?
 
-conda recommended
+# conda so that you can have multiple independent environments
+#
+# cd to install directory e.g. Applications/Python/GrooveKraft
+# conda env create -f environment.yml
+# conda activate groovekraft
+
+
+# python
+
+# Recommended: DB Browser for SQLite
+#
+# https://sqlitebrowser.org
 

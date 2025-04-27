@@ -46,8 +46,7 @@ if __name__ == "__main__":
     #     sys.exit(1)
 
     config = AppConfig(args, os.path.dirname(os.path.abspath(__file__)))
-    config.load_from_config_parser(config_parser)
-
+    config.root_folder = os.getcwd()
     db.initialize_db()
 
     run_gui(config)

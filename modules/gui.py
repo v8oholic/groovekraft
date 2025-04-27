@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem,
     QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar, QDialog, QCheckBox
 )
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut, QIcon
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
@@ -842,5 +842,6 @@ class CollectionViewer(QMainWindow):
 
 def run_gui(cfg: AppConfig) -> None:
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon("assets/groovekraft_icon.png"))
     viewer = CollectionViewer(cfg)
     sys.exit(app.exec())
