@@ -8,8 +8,6 @@ import os
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.join("database", "groovekraft.db")
-
 CREATE_DISCOGS_RELEASES_TABLE = """
     CREATE TABLE IF NOT EXISTS discogs_releases (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,15 +82,19 @@ CREATE_MB_CREDENTIALS_TABLE = """
 """
 
 
-def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
+def get_connection(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = namedtuple_factory
     return conn
 
 
-def initialize_db(db_path: str = DB_PATH) -> None:
+def initialize_db(db_path: str) -> None:
+    if not db_path:
+        logger.critical('Missing db_path')
+        exit()
+
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    conn = get_connection()
+    conn = get_connection(db_path)
     cursor = conn.cursor()
 
     logger.info("Initializing the database...")
@@ -109,7 +111,7 @@ def initialize_db(db_path: str = DB_PATH) -> None:
 
 
 @contextmanager
-def context_manager(db_path: str = DB_PATH, read_only: bool = False):
+def context_manager(db_path: str, read_only: bool = False):
     """Wrapper to take care of committing and closing a database
 
     See https://stackoverflow.com/questions/67436362/decorator-for-sqlite3/67436763
@@ -142,22 +144,22 @@ def row_ignore_change(release_id: int, data_name: str, data_to: str, data_from: 
     return f'⛔️ {reason} {data_name} not set to {data_to} (still {data_from}) for release {release_id}'
 
 
-def get_release_date_by_discogs_id(discogs_id: int, config: str) -> str:
-    with context_manager(config) as cur:
+def get_release_date_by_discogs_id(db_path: str, discogs_id: int) -> str:
+    with context_manager(db_path) as cur:
         cur.execute('SELECT * FROM items WHERE release_id = ?', (discogs_id,))
         row = cur.fetchone()
 
     return row.release_date if row else None
 
 
-def fetch_row_by_mb_id(mb_id: str, config: str) -> namedtuple:
-    with context_manager(config) as cur:
+def fetch_row_by_mb_id(db_path: str, mb_id: str) -> namedtuple:
+    with context_manager(db_path) as cur:
         cur.execute('SELECT * FROM items WHERE mb_id = ?', (mb_id,))
         return cur.fetchone()
 
 
-def db_summarise_row(id: int, config: str = None) -> str:
-    with context_manager() as cur:
+def db_summarise_row(db_path, id: int) -> str:
+    with context_manager(db_path) as cur:
         cur.execute("""
             SELECT *
             FROM discogs_releases

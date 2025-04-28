@@ -872,9 +872,9 @@ def add_candidates(candidates, releases):
     return candidates
 
 
-def match_release_in_musicbrainz(discogs_id, callback=print):
+def match_release_in_musicbrainz(db_path, discogs_id, callback=print):
 
-    row = db_discogs.fetch_row(discogs_id)
+    row = db_discogs.fetch_row(db_path, discogs_id)
     if not row:
         raise Exception('Error loading row')
 
@@ -908,10 +908,12 @@ def match_release_in_musicbrainz(discogs_id, callback=print):
         mb_release_group, mb_release = get_release_and_release_group(mb_release=mb_release)
 
         return update_tables_after_match(
+            db_path,
             discogs_id=discogs_id,
             mb_release=mb_release,
             mb_release_group=mb_release_group,
-            best_match_score=PERFECT_SCORE)
+            best_match_score=PERFECT_SCORE,
+            callback=callback)
 
     if row.master_id:
         # try the master release to release group link
@@ -946,10 +948,12 @@ def match_release_in_musicbrainz(discogs_id, callback=print):
         callback=callback)
 
     return update_tables_after_match(
+        db_path,
         discogs_id=discogs_id,
         mb_release=mb_release,
         mb_release_group=mb_release_group,
-        best_match_score=best_match_score)
+        best_match_score=best_match_score,
+        callback=callback)
 
 
 def mb_match_barcodes(barcodes):
@@ -1017,11 +1021,11 @@ def disambiguate_releases(
     return mb_release_group, mb_release, best_match_score
 
 
-def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None, best_match_score=0, callback=print):
+def update_tables_after_match(db_path, discogs_id, mb_release=None, mb_release_group=None, best_match_score=0, callback=print):
 
     if mb_release is None:
         # nothing further can be done with this release
-        db_musicbrainz.delete_match(discogs_id=discogs_id, callback=callback)
+        db_musicbrainz.delete_match(db_path, discogs_id=discogs_id, callback=callback)
         return False
 
     if not all([
@@ -1079,23 +1083,24 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
     release_date = utils.earliest_date(mb_release.get(
         'date'), mb_release_group.get('first-release-date'))
 
-    row = db_musicbrainz.fetch_row(discogs_id)
+    row = db_musicbrainz.fetch_row(db_path, discogs_id)
     if row:
         # update any changed items
-        db_discogs.set_release_date(discogs_id, release_date, callback=callback)
-        db_discogs.set_sort_name(discogs_id, sort_name, callback=callback)
+        db_discogs.set_release_date(db_path, discogs_id, release_date, callback=callback)
+        db_discogs.set_sort_name(db_path, discogs_id, sort_name, callback=callback)
 
-        db_musicbrainz.set_mbid(discogs_id, mb_release['id'], callback=callback)
-        db_musicbrainz.set_artist(discogs_id, artist, callback=callback)
-        db_musicbrainz.set_title(discogs_id, title, callback=callback)
-        db_musicbrainz.set_country(discogs_id, country, callback=callback)
-        db_musicbrainz.set_format(discogs_id, format, callback=callback)
-        db_musicbrainz.set_score(discogs_id, best_match_score, callback=callback)
-        db_musicbrainz.set_primary_type(discogs_id, primary_type, callback=callback)
-        db_musicbrainz.update_matched_at(discogs_id, callback=callback)
+        db_musicbrainz.set_mbid(db_path, discogs_id, mb_release['id'], callback=callback)
+        db_musicbrainz.set_artist(db_path, discogs_id, artist, callback=callback)
+        db_musicbrainz.set_title(db_path, discogs_id, title, callback=callback)
+        db_musicbrainz.set_country(db_path, discogs_id, country, callback=callback)
+        db_musicbrainz.set_format(db_path, discogs_id, format, callback=callback)
+        db_musicbrainz.set_score(db_path, discogs_id, best_match_score, callback=callback)
+        db_musicbrainz.set_primary_type(db_path, discogs_id, primary_type, callback=callback)
+        db_musicbrainz.update_matched_at(db_path, discogs_id, callback=callback)
 
     else:
         db_musicbrainz.insert_row(
+            db_path,
             discogs_id=discogs_id,
             mbid=mbid,
             artist=artist,
@@ -1108,8 +1113,8 @@ def update_tables_after_match(discogs_id, mb_release=None, mb_release_group=None
     return True
 
 
-def match_discogs_against_mb(callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None, match_all=False):
-    rows = db_discogs.fetch_discogs_release_rows()
+def match_discogs_against_mb(db_path, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None, match_all=False):
+    rows = db_discogs.fetch_discogs_release_rows(db_path)
 
     if not rows:
         callback("No Discogs releases found.")
@@ -1128,7 +1133,7 @@ def match_discogs_against_mb(callback=print, should_cancel=lambda: False, progre
         percent = int((index / total_rows) * 100)
         progress_callback(percent)
 
-        mb_row = db_musicbrainz.fetch_row(row.discogs_id) if not match_all else None
+        mb_row = db_musicbrainz.fetch_row(db_path, row.discogs_id) if not match_all else None
 
         match_row = (
             match_all
@@ -1149,9 +1154,9 @@ def match_discogs_against_mb(callback=print, should_cancel=lambda: False, progre
                 "updated since matched"
             )
         )
-        callback(f'⚙️ {index}/{total_rows} {db.db_summarise_row(row.discogs_id)} ({status})')
+        callback(f'⚙️ {index}/{total_rows} {db.db_summarise_row(db_path,row.discogs_id)} ({status})')
 
-        if match_release_in_musicbrainz(row.discogs_id, callback=callback):
+        if match_release_in_musicbrainz(db_path, row.discogs_id, callback=callback):
             matches_succeeded += 1
 
     callback(f'🏁 {matches_attempted} matches attempted, {matches_succeeded} succeeded.')

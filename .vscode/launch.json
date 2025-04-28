@@ -8,7 +8,7 @@
             "name": "Python: GUI Debugging",
             "type": "debugpy",
             "request": "launch",
-            "program": "main.py",
+            "program": "groovekraft.py",
             "console": "integratedTerminal",
             "redirectOutput": true,
             "justMyCode": false,
@@ -21,7 +21,7 @@
             "name": "Main with Arguments",
             "type": "debugpy",
             "request": "launch",
-            "program": "main.py",
+            "program": "groovekraft.py",
             "console": "integratedTerminal",
             "args": "${command:pickArgs}"
         },

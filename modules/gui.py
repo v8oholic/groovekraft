@@ -225,7 +225,7 @@ class CollectionViewer(QMainWindow):
             try:
                 discogs_importer.import_from_discogs(
                     discogs_client=self.client,
-                    images_folder=self.cfg.images_folder,
+                    cfg=self.cfg,
                     callback=emit_msg,
                     should_cancel=lambda: self._cancel_requested,
                     progress_callback=lambda pct: self.progress.emit(pct)
@@ -269,7 +269,7 @@ class CollectionViewer(QMainWindow):
         find_filter = ''
         format_filter = ''
 
-        with db.context_manager() as cur:
+        with db.context_manager(self.cfg.db_path) as cur:
             query = []
             query.append(
                 'SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id')
@@ -343,7 +343,7 @@ class CollectionViewer(QMainWindow):
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
             # Column 4: Matched (show stars)
-            mb_row = db_musicbrainz.fetch_row(discogs_id=discogs_id)
+            mb_row = db_musicbrainz.fetch_row(self.cfg.db_path, discogs_id=discogs_id)
             score = mb_row.score if mb_row and mb_row.score is not None else 0
             match_star = mb_matcher.score_stars(score)
             match_item = QTableWidgetItem(match_star)
@@ -384,7 +384,7 @@ class CollectionViewer(QMainWindow):
         main_layout.addWidget(table)
 
         def populate_table():
-            with db.context_manager() as cur:
+            with db.context_manager(self.cfg.db_path) as cur:
                 query = []
                 query.append(
                     "SELECT d.sort_name, d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, m.mbid")
@@ -454,7 +454,7 @@ class CollectionViewer(QMainWindow):
 
                 # Column 4: Matched (centered)
                 if mbid:
-                    mb_row = db_musicbrainz.fetch_row(discogs_id=discogs_id)
+                    mb_row = db_musicbrainz.fetch_row(self.cfg.db_path, discogs_id=discogs_id)
                     score = mb_row.score if mb_row and mb_row.score is not None else 0
                 else:
                     score = 0
@@ -491,7 +491,7 @@ class CollectionViewer(QMainWindow):
                             discogs_id_item = table.item(row, 3)
                             if discogs_id_item:
                                 discogs_id = int(discogs_id_item.text())
-                                with db.context_manager() as cur:
+                                with db.context_manager(self.cfg.db_path) as cur:
                                     cur.execute(
                                         "UPDATE discogs_releases SET release_date = ? WHERE discogs_id = ?",
                                         (new_date, discogs_id)
@@ -566,7 +566,7 @@ class CollectionViewer(QMainWindow):
         main_layout.addLayout(random_button_layout)
 
         def load_random_item():
-            with db.context_manager() as cur:
+            with db.context_manager(self.cfg.db_path) as cur:
                 cur.execute(
                     "SELECT d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, d.catnos, d.barcodes, m.mbid "
                     "FROM discogs_releases d "
@@ -631,7 +631,8 @@ class CollectionViewer(QMainWindow):
         def run_import():
             log_output.clear()
             try:
-                client, access_token, access_secret = discogs_importer.connect_to_discogs(self.cfg)
+                client, access_token, access_secret = discogs_importer.connect_to_discogs(
+                    self.cfg.db_path)
             except Exception as e:
                 log_output.append(f"Authentication failed: {e}")
                 return
@@ -747,6 +748,7 @@ class CollectionViewer(QMainWindow):
                     musicbrainzngs.set_rate_limit(1, 1)
 
                     mb_matcher.match_discogs_against_mb(
+                        self.cfg.db_path,
                         callback=self.progress_msg.emit,
                         should_cancel=lambda: self._cancel_requested,
                         progress_callback=lambda pct: self.progress.emit(pct),
@@ -762,7 +764,7 @@ class CollectionViewer(QMainWindow):
 
             if match_button.text() == import_button_label:
                 log_output.clear()
-                creds = db_musicbrainz.get_credentials()
+                creds = db_musicbrainz.get_credentials(self.cfg.db_path)
                 if creds:
                     username, password = creds
                     try:
@@ -777,11 +779,12 @@ class CollectionViewer(QMainWindow):
                     dlg = mb_auth_gui.MBAuthDialog()
                     if dlg.exec() == QDialog.DialogCode.Accepted:
                         username, password = dlg.get_credentials()
-                        db_musicbrainz.set_credentials(username, password)
+                        db_musicbrainz.set_credentials(self.cfg.db_path, username, password)
                     else:
                         return
 
                 cfg = SimpleNamespace()
+                cfg.db_path = self.cfg.db_path
                 cfg.username = username
                 cfg.password = password
                 cfg.match_all = match_all_checkbox.isChecked()

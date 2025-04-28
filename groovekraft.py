@@ -2,7 +2,6 @@
 
 # CLI entry point
 
-import discogs_client
 import sys
 import argparse
 import signal
@@ -10,9 +9,10 @@ from dateutil import parser
 import logging
 import configparser
 import os
+from pathlib import Path
 
 from modules import db
-from modules.config import AppConfig
+from modules.config import AppConfig, APP_NAME
 from modules.gui import run_gui
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -22,6 +22,18 @@ logger = logging.getLogger(__name__)
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C!')
     sys.exit(0)
+
+
+def get_user_data_dir(app_name: str) -> Path:
+    if sys.platform == "darwin":
+        base_dir = Path.home() / "Library" / "Application Support"
+    elif sys.platform.startswith("win"):
+        base_dir = Path(os.getenv("APPDATA"))
+    else:  # Assume Linux
+        base_dir = Path.home() / ".local" / "share"
+    app_dir = base_dir / app_name
+    app_dir.mkdir(parents=True, exist_ok=True)
+    return app_dir
 
 
 if __name__ == "__main__":
@@ -46,7 +58,10 @@ if __name__ == "__main__":
     #     sys.exit(1)
 
     config = AppConfig(args, os.path.dirname(os.path.abspath(__file__)))
-    config.root_folder = os.getcwd()
-    db.initialize_db()
+    config.root_folder = get_user_data_dir(APP_NAME)
+    config.db_path = os.path.join(config.root_folder, "database", "GrooveKraft.db")
+    config.images_folder = os.path.join(config.root_folder, "images")
+
+    db.initialize_db(config.db_path)
 
     run_gui(config)

@@ -267,6 +267,9 @@ def humanize_date_delta(dt1, dt2=datetime.date.today()):
                 parts.append(pluralize(value, label_map[field]))
         return parts
 
+    if not dt1:
+        return ''
+
     date_formats = ['%Y-%m-%d', '%Y-%m', '%Y']
     settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first'}
 

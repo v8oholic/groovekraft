@@ -60,8 +60,8 @@ class Scraper:
             return None
 
 
-def scrape_row(discogs_client, discogs_id=0):
-    row = db_discogs.fetch_row(discogs_id)
+def scrape_row(db_path, discogs_client, discogs_id=0):
+    row = db_discogs.fetch_row(db_path, discogs_id)
     discogs_release = discogs_client.release(discogs_id)
     release_url = discogs_release.url
 
@@ -100,13 +100,13 @@ def scrape_row(discogs_client, discogs_id=0):
                 db_discogs.set_release_date(row.discogs_id, release_date)
 
 
-def scrape_discogs(config):
-    discogs_client, *_ = db_discogs.connect_to_discogs(config)
+def scrape_discogs(db_path):
+    discogs_client, *_ = db_discogs.connect_to_discogs(db_path)
     with db.context_manager() as cur:
         cur.execute("SELECT * FROM discogs_releases ORDER BY sort_name, discogs_id")
         rows = cur.fetchall()
         print(f'{len(rows)} rows')
         with Scraper() as scraper:
             for row in rows:
-                print(f'scrape {db.db_summarise_row(row.discogs_id)}')
-                scrape_row(discogs_client=discogs_client, discogs_id=row.discogs_id)
+                print(f'scrape {db.db_summarise_row(db_path, row.discogs_id)}')
+                scrape_row(db_path, discogs_client=discogs_client, discogs_id=row.discogs_id)

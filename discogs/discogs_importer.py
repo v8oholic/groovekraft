@@ -12,13 +12,14 @@ from modules import utils
 from discogs.discogs_oauth_gui import prompt_oauth_verifier_gui
 from modules.config import DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, GROOVEKRAFT_USER_AGENT
 import logging
+from modules.config import AppConfig
 
 logger = logging.getLogger(__name__)
 
 
-def connect_to_discogs(config):
+def connect_to_discogs(db_path):
 
-    token_row = db_discogs.get_oauth_tokens()
+    token_row = db_discogs.get_oauth_tokens(db_path)
     if token_row:
         oauth_token, oauth_token_secret = token_row
     else:
@@ -62,7 +63,7 @@ def connect_to_discogs(config):
         try:
             oauth_verifier = prompt_oauth_verifier_gui(url)
             access_token, access_secret = client.get_access_token(oauth_verifier)
-            db_discogs.set_oauth_tokens(access_token, access_secret)
+            db_discogs.set_oauth_tokens(db_path, access_token, access_secret)
             authenticated = True
         except Exception as e:
             raise Exception(f"Unable to authenticate to Discogs: {e}")
@@ -136,7 +137,11 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
     return ' '.join(output)
 
 
-def import_from_discogs(discogs_client, images_folder, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
+def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
+
+    db_path = cfg.db_path
+    images_folder = cfg.images_folder
+
     os.makedirs(images_folder, exist_ok=True)
     discogs_user = discogs_client.identity()
     releases = discogs_user.collection_folders[0].releases
@@ -183,26 +188,27 @@ def import_from_discogs(discogs_client, images_folder, callback=print, should_ca
         year = release.year or None
         master_id = release.master.id if release.master else 0
 
-        row = db_discogs.fetch_row(release.id)
+        row = db_discogs.fetch_row(db_path, release.id)
         release_date = utils.earliest_date(row.release_date if row else None, year)
 
         if row:
-            db_discogs.set_artist(release.id, artist, callback=callback)
-            db_discogs.set_title(release.id, title, callback=callback)
-            db_discogs.set_format(release.id, format, callback=callback)
-            db_discogs.set_country(release.id, country, callback=callback)
-            db_discogs.set_barcodes(release.id, barcodes or None, callback=callback)
-            db_discogs.set_catnos(release.id, catnos or None, callback=callback)
-            db_discogs.set_year(release.id, year, callback=callback)
-            db_discogs.set_master_id(release.id, master_id, callback=callback)
-            db_discogs.set_release_date(release.id, release_date, callback=callback)
+            db_discogs.set_artist(db_path, release.id, artist, callback=callback)
+            db_discogs.set_title(db_path, release.id, title, callback=callback)
+            db_discogs.set_format(db_path, release.id, format, callback=callback)
+            db_discogs.set_country(db_path, release.id, country, callback=callback)
+            db_discogs.set_barcodes(db_path, release.id, barcodes or None, callback=callback)
+            db_discogs.set_catnos(db_path, release.id, catnos or None, callback=callback)
+            db_discogs.set_year(db_path, release.id, year, callback=callback)
+            db_discogs.set_master_id(db_path, release.id, master_id, callback=callback)
+            db_discogs.set_release_date(db_path, release.id, release_date, callback=callback)
 
             if not row.sort_name:
-                db_discogs.set_sort_name(release.id, artist, callback=callback)
+                db_discogs.set_sort_name(db_path, release.id, artist, callback=callback)
 
             updated += 1
         else:
             db_discogs.insert_row(
+                db_path,
                 discogs_id=release.id,
                 artist=artist,
                 title=title,
@@ -242,7 +248,10 @@ def import_from_discogs(discogs_client, images_folder, callback=print, should_ca
                         f.write(response.content)
                     if row:
                         db_discogs.set_primary_image_uri(
-                            release.id, primary_image_url, callback=callback)
+                            db_path,
+                            release.id,
+                            primary_image_url,
+                            callback=callback)
                     break  # Success, break out of retry loop
                 except Exception as e:
                     if attempt == 1:
