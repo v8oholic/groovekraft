@@ -1086,9 +1086,6 @@ def update_tables_after_match(db_path, discogs_id, mb_release=None, mb_release_g
     row = db_musicbrainz.fetch_row(db_path, discogs_id)
     if row:
         # update any changed items
-        db_discogs.set_release_date(db_path, discogs_id, release_date, callback=callback)
-        db_discogs.set_sort_name(db_path, discogs_id, sort_name, callback=callback)
-
         db_musicbrainz.set_mbid(db_path, discogs_id, mb_release['id'], callback=callback)
         db_musicbrainz.set_artist(db_path, discogs_id, artist, callback=callback)
         db_musicbrainz.set_title(db_path, discogs_id, title, callback=callback)
@@ -1109,6 +1106,9 @@ def update_tables_after_match(db_path, discogs_id, mb_release=None, mb_release_g
             format=format,
             score=best_match_score,
             primary_type=primary_type)
+
+    db_discogs.set_release_date(db_path, discogs_id, release_date, callback=callback)
+    db_discogs.set_sort_name(db_path, discogs_id, sort_name, callback=callback)
 
     return True
 
