@@ -114,8 +114,10 @@ To build GrooveKraft into a standalone macOS application:
 
 ```bash
 conda activate groovekraft
-pyinstaller --windowed --icon=icon.icns groovekraft.py
+pyinstaller GrooveKraft.spec
 ```
+
+(This ensures all resources like icons and additional files are properly bundled. For quick testing only, you can still build with `pyinstaller --windowed --icon=icon.icns groovekraft.py`, but this may miss extra files.)
 
 After building, create a `.dmg` file manually or with a tool like `create-dmg`.
 

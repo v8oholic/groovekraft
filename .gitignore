@@ -96,3 +96,6 @@ discogs_data/
 
 # Images downloaded from Discogs
 images/
+
+# Allow GrooveKraft.spec
+!GrooveKraft.spec
