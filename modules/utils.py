@@ -2,6 +2,8 @@
 
 # Shared helper functions
 
+from functools import wraps
+import time
 import datetime
 import re
 import logging
@@ -12,6 +14,28 @@ import dateutil
 
 
 logger = logging.getLogger(__name__)
+
+
+def timed(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        elapsed = time.time() - start
+
+        # Color output depending on time
+        if elapsed < 1:
+            color_code = "\033[92m"  # Green
+        elif elapsed < 5:
+            color_code = "\033[93m"  # Yellow
+        else:
+            color_code = "\033[91m"  # Red
+        reset_code = "\033[0m"
+
+        print(f"{color_code}[{func.__name__}] took {elapsed:.2f} seconds{reset_code}")
+        return result
+    return wrapper
+
 
 try:
     with open("config/countries.json", "r", encoding="utf-8") as f:
