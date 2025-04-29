@@ -1,6 +1,8 @@
 # GrooveKraft
 
-**GrooveKraft** is a fast, lightweight music collection manager that uses Discogs and MusicBrainz to enrich your collection with detailed metadata and artwork.
+**GrooveKraft** is a fast*, lightweight music collection manager that uses Discogs and MusicBrainz to enrich your collection with detailed metadata and artwork.
+
+\* Startup time is under investigation (5-10 secs).
 
 ## Features
 
