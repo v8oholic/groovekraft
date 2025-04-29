@@ -37,6 +37,13 @@ def timed(func):
     return wrapper
 
 
+t0 = time.time()
+
+
+def log_time(msg):
+    print(f"[{time.time() - t0:.2f}s] {msg}")
+
+
 try:
     with open("config/countries.json", "r", encoding="utf-8") as f:
         COUNTRIES = json.load(f)
