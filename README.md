@@ -17,7 +17,7 @@
 To import a collection from Discogs, run the Discogs Importer. The first time, you will be asked to authorise an OAuth token. The Discogs importer
 is lightweight, but the API is rate-limited, and sometimes (rarely) it can encounter random errors. If that happens, simply re-running the import
 should fix it. On the first import, the primary artwork will be downloaded from Discogs and saved locally. At a guess it takes about 10 minutes
-to import 1,000 items.
+to import 1,000 items. After the first time, the credentials will be re-used, but a new token is needed whenever the app version changes.
 
 Next, the collection needs to be matched in MusicBrainz. You will be prompted for a MusicBrainz username and password the first time.
 The matching process has various strategies to try to find the same release in MusicBrainz, but some things just don't exist.
