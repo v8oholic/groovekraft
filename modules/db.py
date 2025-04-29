@@ -1,9 +1,19 @@
-#!/usr/bin/env python3
-import logging
-from collections import namedtuple
-import sqlite3
-from contextlib import contextmanager
 import os
+from contextlib import contextmanager
+import sqlite3
+from collections import namedtuple
+import logging
+CREATE_IDX_DISCOGS_ID = "CREATE UNIQUE INDEX IF NOT EXISTS idx_discogs_id ON discogs_releases (discogs_id);"
+CREATE_IDX_RELEASE_DATE = "CREATE INDEX IF NOT EXISTS idx_release_date ON discogs_releases (release_date);"
+CREATE_IDX_MATCHES_DISCOGS_ID = "CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_discogs_id ON mb_matches (discogs_id);"
+CREATE_IDX_MATCHES_MBID = "CREATE INDEX IF NOT EXISTS idx_matches_mbid ON mb_matches (mbid);"
+CREATE_IDX_MB_CREDENTIALS_USERNAME = "CREATE UNIQUE INDEX IF NOT EXISTS idx_mb_credentials_username ON mb_credentials (username);"
+CREATE_IDX_MB_MATCHES_MBID = "CREATE INDEX IF NOT EXISTS idx_mb_matches_mbid ON mb_matches (mbid);"
+CREATE_IDX_SORT_NAME = "CREATE INDEX IF NOT EXISTS idx_sort_name ON discogs_releases (sort_name);"
+CREATE_IDX_ARTIST = "CREATE INDEX IF NOT EXISTS idx_artist ON discogs_releases (artist);"
+CREATE_IDX_TITLE = "CREATE INDEX IF NOT EXISTS idx_title ON discogs_releases (title);"
+CREATE_IDX_FORMAT = "CREATE INDEX IF NOT EXISTS idx_format ON discogs_releases (format);"
+#!/usr/bin/env python3
 
 
 logger = logging.getLogger(__name__)
@@ -105,6 +115,18 @@ def initialize_db(db_path: str) -> None:
     cursor.execute(CREATE_MB_MATCHES_TRIGGER)
     cursor.execute(CREATE_DISCOGS_OAUTH_TABLE)
     cursor.execute(CREATE_MB_CREDENTIALS_TABLE)
+
+    # Create indexes for performance
+    cursor.execute(CREATE_IDX_DISCOGS_ID)
+    cursor.execute(CREATE_IDX_RELEASE_DATE)
+    cursor.execute(CREATE_IDX_MATCHES_DISCOGS_ID)
+    cursor.execute(CREATE_IDX_MATCHES_MBID)
+    cursor.execute(CREATE_IDX_MB_CREDENTIALS_USERNAME)
+    cursor.execute(CREATE_IDX_MB_MATCHES_MBID)
+    cursor.execute(CREATE_IDX_SORT_NAME)
+    cursor.execute(CREATE_IDX_ARTIST)
+    cursor.execute(CREATE_IDX_TITLE)
+    cursor.execute(CREATE_IDX_FORMAT)
 
     conn.commit()
     conn.close()
