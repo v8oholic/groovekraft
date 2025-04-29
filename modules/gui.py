@@ -424,6 +424,8 @@ class CollectionViewer(QMainWindow):
             table.setUpdatesEnabled(False)
             with db.context_manager(self.cfg.db_path) as cur:
                 query = []
+                params = []
+
                 query.append(
                     "SELECT d.sort_name, d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, m.mbid")
                 query.append("FROM discogs_releases d")
@@ -431,17 +433,20 @@ class CollectionViewer(QMainWindow):
                 filters = []
 
                 if artist_input.text():
-                    filters.append(f'd.sort_name LIKE "%{artist_input.text()}%"')
+                    filters.append('d.sort_name LIKE ?')
+                    params.append(f"%{artist_input.text()}%")
                 if title_input.text():
-                    filters.append(f'd.title LIKE "%{title_input.text()}%"')
+                    filters.append('d.title LIKE ?')
+                    params.append(f"%{title_input.text()}%")
                 if format_input.text():
-                    filters.append(f'd.format LIKE "%{format_input.text()}%"')
+                    filters.append('d.format LIKE ?')
+                    params.append(f"%{format_input.text()}%")
 
                 if filters:
                     query.append("WHERE " + " AND ".join(filters))
 
                 query.append("ORDER BY d.sort_name, d.release_date, d.title, d.discogs_id")
-                cur.execute(' '.join(query))
+                cur.execute(' '.join(query), params)
                 rows = cur.fetchall()
 
             # Update table columns and headers to new format
