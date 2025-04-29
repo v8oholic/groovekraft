@@ -204,16 +204,10 @@ class ReleaseDateEditDialog(QDialog):
 
 class CollectionViewer(QMainWindow):
     def refresh_views(self):
-        tab_widget = self.centralWidget()
-        for i in range(tab_widget.count()):
-            tab = tab_widget.widget(i)
-            if isinstance(tab, QWidget):
-                tables = tab.findChildren(QTableWidget)
-                for table in tables:
-                    if table.columnCount() == 5:  # Match Collection and On This Day tables
-                        table.clearContents()
-                        table.setRowCount(0)
-                        table.viewport().update()
+        if getattr(self, "populate_collection_table_fn", None):
+            self.populate_collection_table_fn()
+        if getattr(self, "populate_on_this_day_table_fn", None):
+            self.populate_on_this_day_table_fn()
 
     class DiscogsImportWorker(QObject):
         progress_msg = pyqtSignal(str)
@@ -255,6 +249,12 @@ class CollectionViewer(QMainWindow):
         self.setMinimumSize(800, 600)
         tab_widget = QTabWidget()
 
+        # Initialize references for later use
+        self.collection_table = None
+        self.on_this_day_table = None
+        self.populate_collection_table_fn = None
+        self.populate_on_this_day_table_fn = None
+
         on_this_day_tab = self.create_on_this_day_tab()
         tab_widget.addTab(on_this_day_tab, "On this day")
 
@@ -282,93 +282,103 @@ class CollectionViewer(QMainWindow):
 
         table = QTableWidget()
         layout.addWidget(table)
+        self.on_this_day_table = table
 
-        # placeholder filters
-        find_filter = ''
-        format_filter = ''
+        # The logic for populating the table
+        def populate_on_this_day_table():
+            # placeholder filters
+            find_filter = ''
+            format_filter = ''
 
-        with db.context_manager(self.cfg.db_path) as cur:
-            query = []
-            query.append(
-                'SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id')
-            query.append('FROM discogs_releases d')
-            query.append('LEFT JOIN mb_matches m USING(discogs_id)')
-            query.append('WHERE d.release_date IS NOT NULL')
-            if find_filter:
-                query.append(f'AND (d.artist LIKE "%{find_filter}%"')
-                query.append(f'OR d.title LIKE "%{find_filter}%"')
-                query.append(f'OR d.sort_name LIKE "%{find_filter}%")')
-            if format_filter:
-                query.append(f'AND d.format LIKE "%{format_filter}%"')
-            query.append(
-                'ORDER BY length(d.release_date) DESC, d.release_date, d.sort_name, d.title, d.discogs_id')
-            cur.execute(' '.join(query))
-            items = cur.fetchall()
+            with db.context_manager(self.cfg.db_path) as cur:
+                query = []
+                query.append(
+                    'SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id')
+                query.append('FROM discogs_releases d')
+                query.append('LEFT JOIN mb_matches m USING(discogs_id)')
+                query.append('WHERE d.release_date IS NOT NULL')
+                if find_filter:
+                    query.append(f'AND (d.artist LIKE "%{find_filter}%"')
+                    query.append(f'OR d.title LIKE "%{find_filter}%"')
+                    query.append(f'OR d.sort_name LIKE "%{find_filter}%")')
+                if format_filter:
+                    query.append(f'AND d.format LIKE "%{format_filter}%"')
+                query.append(
+                    'ORDER BY length(d.release_date) DESC, d.release_date, d.sort_name, d.title, d.discogs_id')
+                cur.execute(' '.join(query))
+                items = cur.fetchall()
 
-        # filter rows
-        rows = []
-        for item in items:
-            if item.release_date and len(item.release_date) == 10:
-                include = utils.is_today_anniversary(item.release_date)
-            elif item.release_date and len(item.release_date) == 7:
-                include = utils.is_month_anniversary(item.release_date)
-            else:
-                include = False
-            if include:
-                rows.append(item)
+            # filter rows
+            rows = []
+            for item in items:
+                if item.release_date and len(item.release_date) == 10:
+                    include = utils.is_today_anniversary(item.release_date)
+                elif item.release_date and len(item.release_date) == 7:
+                    include = utils.is_month_anniversary(item.release_date)
+                else:
+                    include = False
+                if include:
+                    rows.append(item)
 
-        # Set up table to match Collection tab structure
-        table.setColumnCount(5)
-        table.setHorizontalHeaderLabels(
-            ['Thumbnail', 'Details', 'Release Date', 'Discogs Id', 'Matched'])
-        table.setRowCount(len(rows))
-        table.verticalHeader().setDefaultSectionSize(110)
+            # Set up table to match Collection tab structure
+            table.setColumnCount(5)
+            table.setHorizontalHeaderLabels(
+                ['Thumbnail', 'Details', 'Release Date', 'Discogs Id', 'Matched'])
+            table.setRowCount(len(rows))
+            table.verticalHeader().setDefaultSectionSize(110)
 
-        for row_idx, (artist, title, format, country, release_date, discogs_id) in enumerate(rows):
-            # Column 0: Thumbnail
-            image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
-            if os.path.exists(image_path):
-                from PyQt6.QtGui import QPixmap
-                pixmap = QPixmap(image_path)
-                pixmap = pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
-                                       Qt.TransformationMode.SmoothTransformation)
-                thumbnail_item = QTableWidgetItem()
-                thumbnail_item.setData(Qt.ItemDataRole.DecorationRole, pixmap)
-                thumbnail_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                table.setItem(row_idx, 0, thumbnail_item)
+            for row_idx, (artist, title, format, country, release_date, discogs_id) in enumerate(rows):
+                # Column 0: Thumbnail
+                image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
+                if os.path.exists(image_path):
+                    from PyQt6.QtGui import QPixmap
+                    pixmap = QPixmap(image_path)
+                    pixmap = pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
+                                           Qt.TransformationMode.SmoothTransformation)
+                    thumbnail_item = QTableWidgetItem()
+                    thumbnail_item.setData(Qt.ItemDataRole.DecorationRole, pixmap)
+                    thumbnail_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    table.setItem(row_idx, 0, thumbnail_item)
 
-            # Column 1: Details (QLabel with HTML, similar to Collection tab)
-            details_html = f"<b>{title}</b><br>{artist}<br>{format}<br>{country}"
-            details_label = QLabel()
-            details_label.setText(details_html)
-            details_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            details_label.setWordWrap(True)
-            details_label.setContentsMargins(10, 0, 10, 0)
-            table.setCellWidget(row_idx, 1, details_label)
+                # Column 1: Details (QLabel with HTML, similar to Collection tab)
+                details_html = f"<b>{title}</b><br>{artist}<br>{format}<br>{country}"
+                details_label = QLabel()
+                details_label.setText(details_html)
+                details_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
+                                           Qt.AlignmentFlag.AlignVCenter)
+                details_label.setWordWrap(True)
+                details_label.setContentsMargins(10, 0, 10, 0)
+                table.setCellWidget(row_idx, 1, details_label)
 
-            # Column 2: Release Date (humanized, bold + delta)
-            release_text = f"<b>{utils.parse_and_humanize_date(release_date)}</b><br>{utils.humanize_date_delta(release_date)}"
-            release_label = QLabel()
-            release_label.setText(release_text)
-            release_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            release_label.setWordWrap(True)
-            release_label.setContentsMargins(10, 0, 10, 0)
-            table.setCellWidget(row_idx, 2, release_label)
+                # Column 2: Release Date (humanized, bold + delta)
+                release_text = f"<b>{utils.parse_and_humanize_date(release_date)}</b><br>{utils.humanize_date_delta(release_date)}"
+                release_label = QLabel()
+                release_label.setText(release_text)
+                release_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
+                                           Qt.AlignmentFlag.AlignVCenter)
+                release_label.setWordWrap(True)
+                release_label.setContentsMargins(10, 0, 10, 0)
+                table.setCellWidget(row_idx, 2, release_label)
 
-            # Column 3: Discogs Id (right aligned)
-            table.setItem(row_idx, 3, QTableWidgetItem(str(discogs_id)))
-            table.item(row_idx, 3).setTextAlignment(
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                # Column 3: Discogs Id (right aligned)
+                table.setItem(row_idx, 3, QTableWidgetItem(str(discogs_id)))
+                table.item(row_idx, 3).setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-            # Column 4: Matched (show stars)
-            mb_row = db_musicbrainz.fetch_row(self.cfg.db_path, discogs_id=discogs_id)
-            score = mb_row.score if mb_row and mb_row.score is not None else 0
-            match_star = mb_matcher.score_stars(score)
-            match_item = QTableWidgetItem(match_star)
-            match_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            table.setItem(row_idx, 4, match_item)
+                # Column 4: Matched (show stars)
+                mb_row = db_musicbrainz.fetch_row(self.cfg.db_path, discogs_id=discogs_id)
+                score = mb_row.score if mb_row and mb_row.score is not None else 0
+                match_star = mb_matcher.score_stars(score)
+                match_item = QTableWidgetItem(match_star)
+                match_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                table.setItem(row_idx, 4, match_item)
 
-        table.resizeColumnsToContents()
+            table.resizeColumnsToContents()
+
+        # Initial population
+        populate_on_this_day_table()
+        # Store for refresh_views
+        self.populate_on_this_day_table_fn = populate_on_this_day_table
         return widget
 
     def create_collection_tab(self):
@@ -400,6 +410,7 @@ class CollectionViewer(QMainWindow):
         # Table
         table = QTableWidget()
         main_layout.addWidget(table)
+        self.collection_table = table
 
         from PyQt6.QtCore import QTimer
         # Debounce filter changes using a single-shot QTimer
@@ -600,6 +611,8 @@ class CollectionViewer(QMainWindow):
         # Connect scrollbar after widget is shown and table is created
         QTimer.singleShot(500, populate_table)
         QTimer.singleShot(600, connect_scrollbar)
+        # Store the populate function for refresh_views
+        self.populate_collection_table_fn = populate_table
         return widget
 
     def create_randomiser_tab(self):
