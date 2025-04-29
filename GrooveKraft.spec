@@ -1,5 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+# Inject dynamic version
+import sys
+sys.path.insert(0, '.')
+from modules.version import __version__
 
 a = Analysis(
     ['groovekraft.py'],
@@ -47,5 +51,11 @@ app = BUNDLE(
     coll,
     name='GrooveKraft.app',
     icon='assets/groovekraft.icns',
-    bundle_identifier=None,
+    bundle_identifier='com.groovekraft.app',
+    info_plist={
+        'CFBundleName': 'GrooveKraft',
+        'CFBundleShortVersionString': __version__,
+        'CFBundleVersion': __version__,
+        'CFBundleIdentifier': 'com.groovekraft.app'
+    }
 )
