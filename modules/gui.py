@@ -203,6 +203,18 @@ class ReleaseDateEditDialog(QDialog):
 
 
 class CollectionViewer(QMainWindow):
+    def refresh_views(self):
+        tab_widget = self.centralWidget()
+        for i in range(tab_widget.count()):
+            tab = tab_widget.widget(i)
+            if isinstance(tab, QWidget):
+                tables = tab.findChildren(QTableWidget)
+                for table in tables:
+                    if table.columnCount() == 5:  # Match Collection and On This Day tables
+                        table.clearContents()
+                        table.setRowCount(0)
+                        table.viewport().update()
+
     class DiscogsImportWorker(QObject):
         progress_msg = pyqtSignal(str)
         finished = pyqtSignal()
@@ -242,16 +254,22 @@ class CollectionViewer(QMainWindow):
             self.cfg.images_folder = os.path.join(self.cfg.root_folder, "images")
         self.setMinimumSize(800, 600)
         tab_widget = QTabWidget()
+
         on_this_day_tab = self.create_on_this_day_tab()
         tab_widget.addTab(on_this_day_tab, "On this day")
+
         collection_tab = self.create_collection_tab()
         tab_widget.addTab(collection_tab, "Collection")
+
         randomiser_tab = self.create_randomiser_tab()
         tab_widget.addTab(randomiser_tab, "Randomiser")
+
         importer_tab = self.create_discogs_importer_tab()
         tab_widget.addTab(importer_tab, "Discogs Importer")
+
         matcher_tab = self.create_musicbrainz_matcher_tab()
         tab_widget.addTab(matcher_tab, "MusicBrainz Matcher")
+
         self.setCentralWidget(tab_widget)
         self.esc_shortcut = QShortcut(QKeySequence("Escape"), self)
         self.esc_shortcut.activated.connect(self.close)
@@ -383,7 +401,27 @@ class CollectionViewer(QMainWindow):
         table = QTableWidget()
         main_layout.addWidget(table)
 
+        from PyQt6.QtCore import QTimer
+        # Debounce filter changes using a single-shot QTimer
+        filter_timer = QTimer()
+        filter_timer.setSingleShot(True)
+        filter_timer.setInterval(500)
+
+        # Track last filter values to avoid redundant refreshes
+        last_filter_values = None
+
         def populate_table():
+            nonlocal resize_done, last_filter_values
+            current_filters = {
+                "artist": artist_input.text(),
+                "title": title_input.text(),
+                "format": format_input.text()
+            }
+            if last_filter_values is not None and current_filters == last_filter_values:
+                return  # No real change, skip repopulating
+            last_filter_values = current_filters
+            resize_done = False
+            table.setUpdatesEnabled(False)
             with db.context_manager(self.cfg.db_path) as cur:
                 query = []
                 query.append(
@@ -415,17 +453,9 @@ class CollectionViewer(QMainWindow):
             table.verticalHeader().setDefaultSectionSize(110)
 
             for row_idx, (sort_name, artist, title, format, country, release_date, discogs_id, mbid) in enumerate(rows):
-                # Column 0: Thumbnail
-                image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
-                if os.path.exists(image_path):
-                    from PyQt6.QtGui import QPixmap
-                    pixmap = QPixmap(image_path)
-                    pixmap = pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
-                                           Qt.TransformationMode.SmoothTransformation)
-                    thumbnail_item = QTableWidgetItem()
-                    thumbnail_item.setData(Qt.ItemDataRole.DecorationRole, pixmap)
-                    thumbnail_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    table.setItem(row_idx, 0, thumbnail_item)
+                # Column 0: Artwork (empty QTableWidgetItem for lazy thumbnail loading)
+                thumbnail_item = QTableWidgetItem()
+                table.setItem(row_idx, 0, thumbnail_item)
 
                 # Column 1: Details (QLabel with HTML)
                 details_html = f"<b>{title}</b><br>{artist}<br>{format}<br>{country}"
@@ -465,9 +495,54 @@ class CollectionViewer(QMainWindow):
                 table.setItem(row_idx, 4, match_item)
 
             table.resizeColumnsToContents()
+            table.setUpdatesEnabled(True)
+            table.repaint()
 
             # Hook up double-click for editing release date
             table.cellDoubleClicked.connect(lambda row, col: on_table_double_click(row, col, table))
+
+            # Call lazy thumbnail loader after populating table
+            load_visible_thumbnails()
+
+        # Connect filter_timer to call populate_table (debounced)
+        filter_timer.timeout.connect(populate_table)
+
+        # Lazy load thumbnails for visible rows only (with column resize on first load)
+        resize_done = False
+
+        def load_visible_thumbnails():
+            nonlocal resize_done
+            viewport_rect = table.viewport().rect()
+            visible_rows_loaded = 0
+
+            for row in range(table.rowCount()):
+                item = table.item(row, 0)
+                if not item:
+                    continue
+                rect = table.visualItemRect(item)
+                if viewport_rect.intersects(rect):
+                    if item.data(Qt.ItemDataRole.DecorationRole) is None:
+                        discogs_id_item = table.item(row, 3)
+                        if discogs_id_item:
+                            discogs_id = discogs_id_item.text()
+                            image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
+                            if os.path.exists(image_path):
+                                from PyQt6.QtGui import QPixmap
+                                pixmap = QPixmap(image_path)
+                                pixmap = pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio,
+                                                       Qt.TransformationMode.SmoothTransformation)
+                                item.setData(Qt.ItemDataRole.DecorationRole, pixmap)
+                                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                                visible_rows_loaded += 1
+
+            if not resize_done and visible_rows_loaded > 0:
+                table.resizeColumnsToContents()
+                resize_done = True
+
+        # Connect vertical scrollbar to lazy thumbnail loader
+        def connect_scrollbar():
+            scrollbar = table.verticalScrollBar()
+            scrollbar.valueChanged.connect(load_visible_thumbnails)
 
         # Define double-click handler for release date edit
         def on_table_double_click(row, column, table):
@@ -502,19 +577,24 @@ class CollectionViewer(QMainWindow):
                             label.setText(
                                 f"<b>{utils.parse_and_humanize_date(new_date)}</b><br>{utils.humanize_date_delta(new_date)}")
 
-        # Connect filter changes to repopulate the table
-        artist_input.textChanged.connect(populate_table)
-        title_input.textChanged.connect(populate_table)
-        format_input.textChanged.connect(populate_table)
+        # Connect filter changes to start the debounce timer instead of calling populate_table directly
+        artist_input.textChanged.connect(lambda: filter_timer.start())
+        title_input.textChanged.connect(lambda: filter_timer.start())
+        format_input.textChanged.connect(lambda: filter_timer.start())
 
         def clear_filters():
+            nonlocal last_filter_values
             artist_input.clear()
             title_input.clear()
             format_input.clear()
+            last_filter_values = None  # Force repopulation
+            filter_timer.start()
 
         clear_button.clicked.connect(clear_filters)
 
-        populate_table()
+        # Connect scrollbar after widget is shown and table is created
+        QTimer.singleShot(500, populate_table)
+        QTimer.singleShot(600, connect_scrollbar)
         return widget
 
     def create_randomiser_tab(self):
@@ -652,6 +732,7 @@ class CollectionViewer(QMainWindow):
                 import_button.setStyleSheet(get_default_button_stylesheet())
                 enable_tabs_and_escape()
             worker.finished.connect(restore_import_button)
+            worker.finished.connect(self.refresh_views)
             worker.finished.connect(self.thread.quit)
             worker.finished.connect(worker.deleteLater)
             self.thread.finished.connect(self.thread.deleteLater)
@@ -807,6 +888,7 @@ class CollectionViewer(QMainWindow):
                         match_button.setStyleSheet(get_default_button_stylesheet())
                     worker.finished.connect(restore_button)
                     worker.finished.connect(enable_tabs_and_escape)
+                    worker.finished.connect(self.refresh_views)
                     worker.run()
                 else:
                     self.mb_thread = QThread()
@@ -824,6 +906,7 @@ class CollectionViewer(QMainWindow):
                         match_button.setStyleSheet(get_default_button_stylesheet())
                     worker.finished.connect(restore_button)
                     worker.finished.connect(enable_tabs_and_escape)
+                    worker.finished.connect(self.refresh_views)
 
                     self.mb_thread.started.connect(worker.run)
                     self.mb_thread.start()
