@@ -242,8 +242,8 @@ class CollectionViewer(QMainWindow):
 
     def __init__(self, cfg: AppConfig):
         super().__init__()
-        self.setWindowTitle("GrooveKraft")
         self.cfg = cfg
+        self.setWindowTitle(f"{self.cfg.app_name} v{self.cfg.app_version}")
         if not hasattr(self.cfg, "images_folder"):
             self.cfg.images_folder = os.path.join(self.cfg.root_folder, "images")
         self.setMinimumSize(800, 600)

@@ -18,5 +18,6 @@ class AppConfig:
         self.verbose = args.verbose
         self.discogs_consumer_key = DISCOGS_CONSUMER_KEY
         self.discogs_consumer_secret = DISCOGS_CONSUMER_SECRET
+        self.app_name = APP_NAME
         self.user_agent = GROOVEKRAFT_USER_AGENT
         self.app_version = GROOVEKRAFT_VERSION
