@@ -1,13 +1,12 @@
 import logging
 import os
-
+from modules.version import __version__
 logger = logging.getLogger(__name__)
 
-APP_VERSION = '1.0'
 APP_NAME = 'GrooveKraft'
 
-GROOVEKRAFT_USER_AGENT = 'groovekraft_by_v8oholic/1.0'
-GROOVEKRAFT_VERSION = '1.0'
+GROOVEKRAFT_USER_AGENT = 'groovekraft_by_v8oholic/' + __version__
+GROOVEKRAFT_VERSION = __version__
 
 DISCOGS_CONSUMER_KEY = 'yEJrrZEZrExGHEPjNQca'
 DISCOGS_CONSUMER_SECRET = 'isFjruJTfmmXFXiaywRqCUSkIGwHlHKn'

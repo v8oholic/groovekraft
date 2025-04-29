@@ -36,6 +36,8 @@ def connect_to_discogs(db_path):
                 token=oauth_token,
                 secret=oauth_token_secret
             )
+            # Attempt to validate the token immediately
+            client.identity()
             access_token = oauth_token
             access_secret = oauth_token_secret
             authenticated = True
