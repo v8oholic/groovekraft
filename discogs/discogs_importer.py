@@ -7,7 +7,12 @@ import discogs_client
 from discogs_client.exceptions import HTTPError
 import json
 
-from discogs import db_discogs
+
+from discogs.db_discogs import (
+    get_oauth_tokens, set_oauth_tokens, fetch_row, set_artist, set_title, set_format,
+    set_country, set_barcodes, set_catnos, set_year, set_master_id, set_release_date,
+    set_sort_name, insert_row, set_primary_image_uri, get_all_discogs_ids, fetch_all_rows, delete_discogs_release_row
+)
 from modules import utils
 from discogs.discogs_oauth_gui import prompt_oauth_verifier_gui
 from modules.config import DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, GROOVEKRAFT_USER_AGENT
@@ -19,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def connect_to_discogs(db_path):
 
-    token_row = db_discogs.get_oauth_tokens(db_path)
+    token_row = get_oauth_tokens(db_path)
     if token_row:
         oauth_token, oauth_token_secret = token_row
     else:
@@ -65,7 +70,7 @@ def connect_to_discogs(db_path):
         try:
             oauth_verifier = prompt_oauth_verifier_gui(url)
             access_token, access_secret = client.get_access_token(oauth_verifier)
-            db_discogs.set_oauth_tokens(db_path, access_token, access_secret)
+            set_oauth_tokens(db_path, access_token, access_secret)
             authenticated = True
         except Exception as e:
             raise Exception(f"Unable to authenticate to Discogs: {e}")
@@ -139,6 +144,17 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
     return ' '.join(output)
 
 
+def likely_match(orphan, candidate):
+    # Simple heuristic: match if catnos or barcodes overlap, or artist/title/year match strongly
+    if orphan.catnos and candidate.catnos and set(orphan.catnos.split(', ')) & set(candidate.catnos.split(', ')):
+        return True
+    if orphan.barcodes and candidate.barcodes and set(orphan.barcodes.split(', ')) & set(candidate.barcodes.split(', ')):
+        return True
+    if orphan.artist == candidate.artist and orphan.title == candidate.title and orphan.year == candidate.year:
+        return True
+    return False
+
+
 def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
 
     if __debug__:
@@ -163,6 +179,8 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
     updated = 0
     failed = 0
     total_releases = len(releases)
+
+    imported_ids = set()
 
     for index, release_summary in enumerate(releases, start=1):
         if should_cancel():
@@ -199,27 +217,29 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
         year = release.year or None
         master_id = release.master.id if release.master else 0
 
-        row = db_discogs.fetch_row(db_path, release.id)
+        row = fetch_row(db_path, release.id)
         release_date = utils.earliest_date(row.release_date if row else None, release_date)
 
         if row:
 
-            db_discogs.set_artist(db_path, release.id, artist, callback=callback)
-            db_discogs.set_title(db_path, release.id, title, callback=callback)
-            db_discogs.set_format(db_path, release.id, format, callback=callback)
-            db_discogs.set_country(db_path, release.id, country, callback=callback)
-            db_discogs.set_barcodes(db_path, release.id, barcodes or None, callback=callback)
-            db_discogs.set_catnos(db_path, release.id, catnos or None, callback=callback)
-            db_discogs.set_year(db_path, release.id, year, callback=callback)
-            db_discogs.set_master_id(db_path, release.id, master_id, callback=callback)
-            db_discogs.set_release_date(db_path, release.id, release_date, callback=callback)
+            set_artist(db_path, release.id, artist, callback=callback)
+            set_title(db_path, release.id, title, callback=callback)
+            set_format(db_path, release.id, format, callback=callback)
+            set_country(db_path, release.id, country, callback=callback)
+            set_barcodes(db_path, release.id, barcodes or None, callback=callback)
+            set_catnos(db_path, release.id, catnos or None, callback=callback)
+            set_year(db_path, release.id, year, callback=callback)
+            set_master_id(db_path, release.id, master_id, callback=callback)
+            # Only update the release date if the release_date_locked flag is not set
+            if getattr(row, "release_date_locked", None) in (None, 0):
+                set_release_date(db_path, release.id, release_date, callback=callback)
 
             if not row.sort_name:
-                db_discogs.set_sort_name(db_path, release.id, artist, callback=callback)
+                set_sort_name(db_path, release.id, artist, callback=callback)
 
             updated += 1
         else:
-            db_discogs.insert_row(
+            insert_row(
                 db_path,
                 discogs_id=release.id,
                 artist=artist,
@@ -234,6 +254,8 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
                 release_date=release_date
             )
             imported += 1
+
+        imported_ids.add(release.id)
 
         primary_image_url = None
         if hasattr(release, 'images') and release.images:
@@ -259,7 +281,7 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
                     with open(image_path, "wb") as f:
                         f.write(response.content)
                     if row:
-                        db_discogs.set_primary_image_uri(
+                        set_primary_image_uri(
                             db_path,
                             release.id,
                             primary_image_url,
@@ -268,5 +290,45 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
                 except Exception as e:
                     if attempt == 1:
                         callback(f"Warning: Failed to download image for release {release.id}: {e}")
+
+    # Identify orphans and possible replacements
+    all_db_ids = get_all_discogs_ids(db_path)
+    orphans = set(all_db_ids) - imported_ids
+
+    if orphans:
+        callback(f"Found {len(orphans)} orphaned releases in database not in latest import.")
+        all_rows = fetch_all_rows(db_path)
+        id_to_row = {row.discogs_id: row for row in all_rows}
+
+        for orphan_id in orphans:
+            orphan = id_to_row.get(orphan_id)
+            if not orphan:
+                continue
+            replacements = []
+            for candidate_id in imported_ids:
+                candidate = id_to_row.get(candidate_id)
+                if not candidate:
+                    continue
+                if likely_match(orphan, candidate):
+                    replacements.append(candidate)
+
+            if replacements:
+                locked_date_copied = False
+                for replacement in replacements:
+                    # Carry over locked release date if orphan has it locked and replacement doesn't
+                    if getattr(orphan, "release_date_locked", None) in (1, True) and getattr(replacement, "release_date_locked", None) in (None, 0):
+                        set_release_date(db_path, replacement.discogs_id,
+                                         orphan.release_date, callback=callback)
+                        callback(
+                            f"Carried over locked release date from orphan {orphan_id} to replacement {replacement.discogs_id}")
+                        locked_date_copied = True
+                callback(
+                    f"Orphan release {orphan_id} has {len(replacements)} possible replacements.")
+                # Delete the orphan if replacements were found and (date not locked or locked date copied)
+                if getattr(orphan, "release_date_locked", None) not in (1, True) or locked_date_copied:
+                    delete_discogs_release_row(db_path, orphan_id)
+                    callback(f"Deleted orphan release {orphan_id} from database.")
+            else:
+                callback(f"No replacements found for orphan release {orphan_id}.")
 
     callback(f'🏁 {imported} new items imported, {updated} items updated, {failed} releases failed.')

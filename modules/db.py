@@ -33,7 +33,8 @@ CREATE_DISCOGS_RELEASES_TABLE = """
         release_date TEXT,
         sort_name TEXT COLLATE NOCASE,
         primary_image_uri TEXT,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        release_date_locked INTEGER DEFAULT 0
     );
 """
 
@@ -129,7 +130,16 @@ def initialize_db(db_path: str) -> None:
     cursor.execute(CREATE_IDX_FORMAT)
 
     conn.commit()
+    migrate_add_release_date_locked(db_path)
     conn.close()
+
+
+def migrate_add_release_date_locked(db_path):
+    with context_manager(db_path) as cur:
+        cur.execute("PRAGMA table_info(discogs_releases);")
+        columns = [row[1] for row in cur.fetchall()]
+        if "release_date_locked" not in columns:
+            cur.execute("ALTER TABLE discogs_releases ADD COLUMN release_date_locked INTEGER DEFAULT 0;")
 
 
 @contextmanager

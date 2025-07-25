@@ -62,13 +62,18 @@ def set_master_id(db_path, discogs_id, new_value, callback=print):
 def set_release_date(db_path, discogs_id, new_value, force=False, callback=print):
     with db.context_manager(db_path) as cur:
         cur.execute("""
-            SELECT release_date
+            SELECT release_date, release_date_locked
             FROM discogs_releases
             WHERE discogs_id = ? """, (discogs_id,))
         row = cur.fetchone()
         if not row:
             raise Exception('Unexpected row not found error')
         old_value = row.release_date
+        release_date_locked = row.release_date_locked
+
+        if release_date_locked and not force:
+            logger.info(f"Release date locked for discogs_id {discogs_id}, skipping update.")
+            return
 
         if old_value == new_value:
             return
@@ -186,3 +191,24 @@ def get_oauth_tokens(db_path):
 
 def set_primary_image_uri(db_path, discogs_id, new_value, callback=print):
     update_field_if_changed(db_path, discogs_id, 'primary_image_uri', new_value, callback)
+
+
+# Additional utility functions
+def get_all_discogs_ids(db_path):
+    """Return a list of all discogs_id values in the releases table."""
+    with db.context_manager(db_path) as cur:
+        cur.execute("SELECT discogs_id FROM discogs_releases")
+        return [row[0] for row in cur.fetchall()]
+
+
+def fetch_all_rows(db_path):
+    """Return all rows from discogs_releases."""
+    with db.context_manager(db_path) as cur:
+        cur.execute("SELECT * FROM discogs_releases")
+        return cur.fetchall()
+
+
+def delete_discogs_release_row(db_path, discogs_id):
+    """Delete a row from discogs_releases by discogs_id."""
+    with db.context_manager(db_path) as cur:
+        cur.execute("DELETE FROM discogs_releases WHERE discogs_id = ?", (discogs_id,))

@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QDialogButtonBox
-from modules import db, utils
+from modules.utils import is_today_anniversary, is_month_anniversary, parse_and_humanize_date, humanize_date_delta
+from modules.db import context_manager
 import musicbrainz.db_musicbrainz as db_musicbrainz
 from modules.config import AppConfig, GROOVEKRAFT_USER_AGENT, GROOVEKRAFT_VERSION
 from musicbrainz import mb_matcher, mb_auth_gui
@@ -85,9 +86,8 @@ class ReleaseDetailWidget(QWidget):
 # --- ReleaseDateEditDialog for editing release date in Collection tab ---
 
 
-# Redesigned ReleaseDateEditDialog with dynamic input controls
 class ReleaseDateEditDialog(QDialog):
-    def __init__(self, initial_date, parent=None):
+    def __init__(self, initial_date, parent=None, locked=False):
         super().__init__(parent)
         self.setWindowTitle("Edit Release Date")
         self.resize(350, 250)
@@ -133,6 +133,11 @@ class ReleaseDateEditDialog(QDialog):
         self.year_only_combo.hide()
         layout.addWidget(self.year_only_combo)
 
+        # Add lock checkbox at the bottom
+        self.lock_checkbox = QCheckBox("Lock this release date (prevent automatic updates)")
+        self.lock_checkbox.setChecked(locked)
+        layout.addWidget(self.lock_checkbox)
+
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
                                       QDialogButtonBox.StandardButton.Cancel)
         layout.addWidget(button_box)
@@ -170,25 +175,44 @@ class ReleaseDateEditDialog(QDialog):
         self.year_only_combo.setVisible(mode == 2)
 
     def init_with_date(self, initial_date):
+        from PyQt6.QtCore import QDate
+        # Try to detect valid date forms
+        valid = False
         if len(initial_date) == 10 and '-' in initial_date:
-            self.date_type_combo.setCurrentIndex(0)
             try:
-                from PyQt6.QtCore import QDate
                 year, month, day = map(int, initial_date.split('-'))
-                self.calendar.setSelectedDate(QDate(year, month, day))
+                qdate = QDate(year, month, day)
+                if qdate.isValid():
+                    self.date_type_combo.setCurrentIndex(0)
+                    self.calendar.setSelectedDate(qdate)
+                    valid = True
             except Exception:
-                pass
+                valid = False
         elif len(initial_date) == 7 and '-' in initial_date:
-            self.date_type_combo.setCurrentIndex(1)
-            year, month = initial_date.split('-')
-            self.year_combo.setCurrentText(year)
-            self.month_combo.setCurrentText(month)
+            try:
+                year, month = initial_date.split('-')
+                year = int(year)
+                month = int(month)
+                if 1900 <= year <= 2100 and 1 <= month <= 12:
+                    self.date_type_combo.setCurrentIndex(1)
+                    self.year_combo.setCurrentText(str(year))
+                    self.month_combo.setCurrentText(f"{month:02}")
+                    valid = True
+            except Exception:
+                valid = False
         elif len(initial_date) == 4:
+            try:
+                year = int(initial_date)
+                if 1900 <= year <= 2100:
+                    self.date_type_combo.setCurrentIndex(2)
+                    self.year_only_combo.setCurrentText(str(year))
+                    valid = True
+            except Exception:
+                valid = False
+        if not valid:
+            # If invalid, set to "Year Only" and leave year blank
             self.date_type_combo.setCurrentIndex(2)
-            self.year_only_combo.setCurrentText(initial_date)
-        else:
-            self.date_type_combo.setCurrentIndex(0)
-
+            self.year_only_combo.setCurrentIndex(-1)
         self.update_visible_widgets()
 
     def get_date(self):
@@ -200,6 +224,9 @@ class ReleaseDateEditDialog(QDialog):
         elif mode == 2:
             return self.year_only_combo.currentText()
         return ""
+
+    def is_locked(self):
+        return self.lock_checkbox.isChecked()
 
 
 class CollectionViewer(QMainWindow):
@@ -290,7 +317,7 @@ class CollectionViewer(QMainWindow):
             find_filter = ''
             format_filter = ''
 
-            with db.context_manager(self.cfg.db_path) as cur:
+            with context_manager(self.cfg.db_path) as cur:
                 query = []
                 query.append(
                     'SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id')
@@ -312,9 +339,9 @@ class CollectionViewer(QMainWindow):
             rows = []
             for item in items:
                 if item.release_date and len(item.release_date) == 10:
-                    include = utils.is_today_anniversary(item.release_date)
+                    include = is_today_anniversary(item.release_date)
                 elif item.release_date and len(item.release_date) == 7:
-                    include = utils.is_month_anniversary(item.release_date)
+                    include = is_month_anniversary(item.release_date)
                 else:
                     include = False
                 if include:
@@ -351,7 +378,7 @@ class CollectionViewer(QMainWindow):
                 table.setCellWidget(row_idx, 1, details_label)
 
                 # Column 2: Release Date (humanized, bold + delta)
-                release_text = f"<b>{utils.parse_and_humanize_date(release_date)}</b><br>{utils.humanize_date_delta(release_date)}"
+                release_text = f"<b>{parse_and_humanize_date(release_date)}</b><br>{humanize_date_delta(release_date)}"
                 release_label = QLabel()
                 release_label.setText(release_text)
                 release_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
@@ -433,12 +460,13 @@ class CollectionViewer(QMainWindow):
             last_filter_values = current_filters
             resize_done = False
             table.setUpdatesEnabled(False)
-            with db.context_manager(self.cfg.db_path) as cur:
+            with context_manager(self.cfg.db_path) as cur:
                 query = []
                 params = []
 
+                # Now also fetch d.release_date_locked
                 query.append(
-                    "SELECT d.sort_name, d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, m.mbid")
+                    "SELECT d.sort_name, d.artist, d.title, d.format, d.country, d.release_date, d.release_date_locked, d.discogs_id, m.mbid")
                 query.append("FROM discogs_releases d")
                 query.append("LEFT JOIN mb_matches m USING(discogs_id)")
                 filters = []
@@ -468,7 +496,12 @@ class CollectionViewer(QMainWindow):
             # Set row height to fit thumbnails
             table.verticalHeader().setDefaultSectionSize(110)
 
-            for row_idx, (sort_name, artist, title, format, country, release_date, discogs_id, mbid) in enumerate(rows):
+            for row_idx, row in enumerate(rows):
+                # Unpack and handle release_date_locked
+                # (sort_name, artist, title, format, country, release_date, release_date_locked, discogs_id, mbid)
+                (sort_name, artist, title, format, country, release_date,
+                 release_date_locked, discogs_id, mbid) = row
+
                 # Column 0: Artwork (empty QTableWidgetItem for lazy thumbnail loading)
                 thumbnail_item = QTableWidgetItem()
                 table.setItem(row_idx, 0, thumbnail_item)
@@ -483,14 +516,22 @@ class CollectionViewer(QMainWindow):
                 details_label.setContentsMargins(10, 0, 10, 0)
                 table.setCellWidget(row_idx, 1, details_label)
 
-                # Column 2: Release Date (QLabel, bold humanized + delta)
-                release_text = f"<b>{utils.parse_and_humanize_date(release_date)}</b><br>{utils.humanize_date_delta(release_date)}"
+                # Column 2: Release Date (QLabel, bold humanized + delta, with lock if needed)
+                release_human = parse_and_humanize_date(release_date)
+                release_delta = humanize_date_delta(release_date)
+                locked = bool(release_date_locked) if release_date_locked is not None else False
+                if locked:
+                    release_text = f"<b>{release_human} 🔒</b><br>{release_delta}"
+                else:
+                    release_text = f"<b>{release_human}</b><br>{release_delta}"
                 release_label = QLabel()
                 release_label.setText(release_text)
                 release_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
                                            Qt.AlignmentFlag.AlignVCenter)
                 release_label.setWordWrap(True)
                 release_label.setContentsMargins(10, 0, 10, 0)
+                if locked:
+                    release_label.setToolTip("Release date is locked; cannot be changed by import.")
                 table.setCellWidget(row_idx, 2, release_label)
 
                 # Column 3: Discogs Id
@@ -514,6 +555,11 @@ class CollectionViewer(QMainWindow):
             table.setUpdatesEnabled(True)
             table.repaint()
 
+            # Ensure double-click handler is not connected multiple times
+            try:
+                table.cellDoubleClicked.disconnect()
+            except TypeError:
+                pass
             # Hook up double-click for editing release date
             table.cellDoubleClicked.connect(lambda row, col: on_table_double_click(row, col, table))
 
@@ -563,35 +609,46 @@ class CollectionViewer(QMainWindow):
         # Define double-click handler for release date edit
         def on_table_double_click(row, column, table):
             if column == 2:  # Release Date column
-                label = table.cellWidget(row, column)
-                if label:
-                    current_text = label.text()
-                    # Extract the date part from HTML
-                    import re
-                    match = re.search(r"<b>(.*?)</b>", current_text)
-                    if match:
-                        initial_date = match.group(1)
-                    else:
-                        initial_date = ""
-
-                    dialog = ReleaseDateEditDialog(initial_date)
+                discogs_id_item = table.item(row, 3)
+                if discogs_id_item:
+                    discogs_id = int(discogs_id_item.text())
+                    with context_manager(self.cfg.db_path) as cur:
+                        cur.execute(
+                            "SELECT release_date, release_date_locked FROM discogs_releases WHERE discogs_id = ?",
+                            (discogs_id,))
+                        row_db = cur.fetchone()
+                        if row_db:
+                            initial_date = row_db.release_date if hasattr(
+                                row_db, "release_date") else ""
+                            locked = bool(row_db.release_date_locked) if hasattr(
+                                row_db, "release_date_locked") and row_db.release_date_locked is not None else False
+                        else:
+                            initial_date = ""
+                            locked = False
+                    dialog = ReleaseDateEditDialog(initial_date, locked=locked)
                     if dialog.exec() == QDialog.DialogCode.Accepted:
                         new_date = dialog.get_date()
+                        new_locked = dialog.is_locked()
                         if new_date:
-                            # Update database
-                            discogs_id_item = table.item(row, 3)
-                            if discogs_id_item:
-                                discogs_id = int(discogs_id_item.text())
-                                with db.context_manager(self.cfg.db_path) as cur:
-                                    cur.execute(
-                                        "UPDATE discogs_releases SET release_date = ? WHERE discogs_id = ?",
-                                        (new_date, discogs_id)
-                                    )
-                                db.commit()
-
+                            with context_manager(self.cfg.db_path) as cur:
+                                cur.execute(
+                                    "UPDATE discogs_releases SET release_date = ?, release_date_locked = ? WHERE discogs_id = ?",
+                                    (new_date, int(new_locked), discogs_id)
+                                )
                             # Update table visually
-                            label.setText(
-                                f"<b>{utils.parse_and_humanize_date(new_date)}</b><br>{utils.humanize_date_delta(new_date)}")
+                            label = table.cellWidget(row, column)
+                            if label:
+                                release_human = parse_and_humanize_date(new_date)
+                                release_delta = humanize_date_delta(new_date)
+                                if new_locked:
+                                    release_text = f"<b>{release_human} 🔒</b><br>{release_delta}"
+                                    label.setText(release_text)
+                                    label.setToolTip(
+                                        "Release date is locked; cannot be changed by import.")
+                                else:
+                                    release_text = f"<b>{release_human}</b><br>{release_delta}"
+                                    label.setText(release_text)
+                                    label.setToolTip("")
 
         # Connect filter changes to start the debounce timer instead of calling populate_table directly
         artist_input.textChanged.connect(lambda: filter_timer.start())
@@ -664,7 +721,7 @@ class CollectionViewer(QMainWindow):
         main_layout.addLayout(random_button_layout)
 
         def load_random_item():
-            with db.context_manager(self.cfg.db_path) as cur:
+            with context_manager(self.cfg.db_path) as cur:
                 cur.execute(
                     "SELECT d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, d.catnos, d.barcodes, m.mbid "
                     "FROM discogs_releases d "

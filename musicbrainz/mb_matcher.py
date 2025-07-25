@@ -7,6 +7,7 @@ import logging
 from discogs import db_discogs
 from musicbrainz import db_musicbrainz
 from modules import db
+from modules.db import context_manager
 from modules import utils
 import musicbrainzngs
 from discogs_client.exceptions import HTTPError
