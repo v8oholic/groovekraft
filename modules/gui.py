@@ -737,12 +737,16 @@ class CollectionViewer(QMainWindow):
 
             import_button.setText("Cancel Import")
 
-            self.thread = QThread()
             worker = CollectionViewer.DiscogsImportWorker(client, self.cfg)
             self.worker = worker  # keep reference
-            worker.moveToThread(self.thread)
+            self.import_thread = QThread()
+            worker.moveToThread(self.import_thread)
 
             worker.progress_msg.connect(lambda msg: log_output.append(msg))
+            worker.progress.connect(progress_bar.setValue)
+            worker.finished.connect(self.import_thread.quit)
+            worker.finished.connect(worker.deleteLater)
+            self.import_thread.finished.connect(self.import_thread.deleteLater)
 
             def restore_import_button():
                 import_button.setText("Import from Discogs")
@@ -751,13 +755,9 @@ class CollectionViewer(QMainWindow):
                 enable_tabs_and_escape()
             worker.finished.connect(restore_import_button)
             worker.finished.connect(self.refresh_views)
-            worker.finished.connect(self.thread.quit)
-            worker.finished.connect(worker.deleteLater)
-            self.thread.finished.connect(self.thread.deleteLater)
-            worker.progress.connect(progress_bar.setValue)
 
-            self.thread.started.connect(worker.run)
-            self.thread.start()
+            self.import_thread.started.connect(worker.run)
+            self.import_thread.start()
 
             # Disable tabs and Escape when import is started
             disable_tabs_and_escape()
@@ -891,46 +891,29 @@ class CollectionViewer(QMainWindow):
                 worker = MBMatcherWorker(cfg)
                 self.mb_worker = worker
 
-                # Insert debugging check: if debugging, run worker.run() directly; else, use QThread
-                if is_debugging():
-                    # Disable tabs and Escape when match is started
-                    match_button.setText(cancel_button_label)
-                    disable_tabs_and_escape()
-                    # Connect signals (simulate, since no thread)
-                    worker.progress_msg.connect(lambda msg: log_output.append(msg))
-                    worker.progress.connect(progress_bar.setValue)
+                # Always use QThread, signals, and GUI updates (no is_debugging() branch)
+                self.mb_thread = QThread()
+                worker.moveToThread(self.mb_thread)
 
-                    def restore_button():
-                        match_button.setText(import_button_label)
-                        match_button.setEnabled(True)
-                        match_button.setStyleSheet(get_default_button_stylesheet())
-                    worker.finished.connect(restore_button)
-                    worker.finished.connect(enable_tabs_and_escape)
-                    worker.finished.connect(self.refresh_views)
-                    worker.run()
-                else:
-                    self.mb_thread = QThread()
-                    worker.moveToThread(self.mb_thread)
+                worker.progress_msg.connect(lambda msg: log_output.append(msg))
+                worker.progress.connect(progress_bar.setValue)
+                worker.finished.connect(self.mb_thread.quit)
+                worker.finished.connect(worker.deleteLater)
+                self.mb_thread.finished.connect(self.mb_thread.deleteLater)
 
-                    worker.progress_msg.connect(lambda msg: log_output.append(msg))
-                    worker.progress.connect(progress_bar.setValue)
-                    worker.finished.connect(self.mb_thread.quit)
-                    worker.finished.connect(worker.deleteLater)
-                    self.mb_thread.finished.connect(self.mb_thread.deleteLater)
+                def restore_button():
+                    match_button.setText(import_button_label)
+                    match_button.setEnabled(True)
+                    match_button.setStyleSheet(get_default_button_stylesheet())
+                worker.finished.connect(restore_button)
+                worker.finished.connect(enable_tabs_and_escape)
+                worker.finished.connect(self.refresh_views)
 
-                    def restore_button():
-                        match_button.setText(import_button_label)
-                        match_button.setEnabled(True)
-                        match_button.setStyleSheet(get_default_button_stylesheet())
-                    worker.finished.connect(restore_button)
-                    worker.finished.connect(enable_tabs_and_escape)
-                    worker.finished.connect(self.refresh_views)
+                self.mb_thread.started.connect(worker.run)
+                self.mb_thread.start()
 
-                    self.mb_thread.started.connect(worker.run)
-                    self.mb_thread.start()
-
-                    match_button.setText(cancel_button_label)
-                    disable_tabs_and_escape()
+                match_button.setText(cancel_button_label)
+                disable_tabs_and_escape()
 
             else:
                 if self.mb_worker:

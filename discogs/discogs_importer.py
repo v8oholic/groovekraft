@@ -141,6 +141,10 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
 
 def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
 
+    if __debug__:
+        import debugpy
+        debugpy.breakpoint()
+
     db_path = cfg.db_path
     images_folder = cfg.images_folder
 
@@ -179,6 +183,11 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
             failed += 1
             continue
 
+        release_date = release.fetch('released') or None
+
+        if isinstance(release_date, str) and release_date.endswith('-00'):
+            release_date = release_date[:len(release_date)-3]
+
         callback(f'⚙️ {index}/{total_releases} {discogs_summarise_release(release=release)}')
 
         artist = normalize_artist(release.artists[0].name)
@@ -191,9 +200,10 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
         master_id = release.master.id if release.master else 0
 
         row = db_discogs.fetch_row(db_path, release.id)
-        release_date = utils.earliest_date(row.release_date if row else None, year)
+        release_date = utils.earliest_date(row.release_date if row else None, release_date)
 
         if row:
+
             db_discogs.set_artist(db_path, release.id, artist, callback=callback)
             db_discogs.set_title(db_path, release.id, title, callback=callback)
             db_discogs.set_format(db_path, release.id, format, callback=callback)

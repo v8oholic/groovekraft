@@ -332,7 +332,7 @@ def humanize_date_delta(dt1, dt2=datetime.date.today()):
         return f"{', '.join(parts[:-1])} and {parts[-1]} {suffix}"
 
 
-def is_today_anniversary(date_str):
+def is_today_anniversary(date_str: str):
     # Parse the input date (expects format YYYY-MM-DD)
     dt1 = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
     dt2 = datetime.datetime.today().date()
@@ -342,7 +342,7 @@ def is_today_anniversary(date_str):
 
 
 def is_month_anniversary(date_str: str) -> bool:
-    # Parse the input date (expects format YYYY-MM-DD)
+    # Parse the input date (expects format YYYY-MM)
     dt1 = datetime.datetime.strptime(date_str, "%Y-%m").date()
     dt2 = datetime.datetime.today().date()
 
