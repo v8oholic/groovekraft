@@ -6,8 +6,7 @@ import logging
 
 from discogs import db_discogs
 from musicbrainz import db_musicbrainz
-from modules import db
-from modules.db import context_manager
+from modules.db import context_manager, db_summarise_row
 from modules import utils
 import musicbrainzngs
 from discogs_client.exceptions import HTTPError
@@ -1155,7 +1154,7 @@ def match_discogs_against_mb(db_path, callback=print, should_cancel=lambda: Fals
                 "updated since matched"
             )
         )
-        callback(f'⚙️ {index}/{total_rows} {db.db_summarise_row(db_path,row.discogs_id)} ({status})')
+        callback(f'⚙️ {index}/{total_rows} {db_summarise_row(db_path,row.discogs_id)} ({status})')
 
         if match_release_in_musicbrainz(db_path, row.discogs_id, callback=callback):
             matches_succeeded += 1

@@ -1,20 +1,20 @@
-from modules import db
+from modules.db import context_manager, row_change
 import logging
 import hashlib
 
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
 
 
 def delete_match(db_path, discogs_id, callback=print):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("""
             DELETE FROM mb_matches
             WHERE discogs_id = ? """, (discogs_id,))
 
 
 def update_field_if_changed(db_path, discogs_id, field_name, new_value, callback=print):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute(f"""
             SELECT {field_name}
             FROM mb_matches
@@ -27,7 +27,7 @@ def update_field_if_changed(db_path, discogs_id, field_name, new_value, callback
         if old_value == new_value:
             return
 
-        callback(db.row_change(discogs_id, field_name, new_value, old_value))
+        callback(row_change(discogs_id, field_name, new_value, old_value))
         cur.execute(f"""
             UPDATE mb_matches
             SET {field_name} = ?
@@ -63,7 +63,7 @@ def set_score(db_path, discogs_id, new_value, callback=print):
 
 
 def update_matched_at(db_path, discogs_id, callback=print):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("""
             UPDATE mb_matches
             SET matched_at = CURRENT_TIMESTAMP
@@ -81,7 +81,7 @@ def insert_row(
         primary_type=None,
         score=None):
 
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("""
             INSERT INTO mb_matches (discogs_id, mbid, artist, title, country, format, primary_type, score)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -89,7 +89,7 @@ def insert_row(
 
 
 def fetch_row(db_path, discogs_id):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute(f"""
             SELECT id, discogs_id, mbid, artist, title, country, score, matched_at
             FROM mb_matches
@@ -101,20 +101,20 @@ def fetch_row(db_path, discogs_id):
 
 def set_credentials(db_path, username, password):
     hashed_password = hashlib.sha256(password.encode('utf-8')).hexdigest()
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("DELETE FROM mb_credentials")
         cur.execute("INSERT INTO mb_credentials (username, password) VALUES (?, ?)",
                     (username, hashed_password))
 
 
 def get_credentials(db_path):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("SELECT username, password FROM mb_credentials LIMIT 1")
         return cur.fetchone()
 
 
 def verify_credentials(db_path, username, password):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("SELECT password FROM mb_credentials WHERE username = ? LIMIT 1", (username,))
         row = cur.fetchone()
     if row:

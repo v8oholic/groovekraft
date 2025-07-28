@@ -13,7 +13,7 @@ from discogs.db_discogs import (
     set_country, set_barcodes, set_catnos, set_year, set_master_id, set_release_date,
     set_sort_name, insert_row, set_primary_image_uri, get_all_discogs_ids, fetch_all_rows, delete_discogs_release_row
 )
-from modules import utils
+from modules.utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name, earliest_date
 from discogs.discogs_oauth_gui import prompt_oauth_verifier_gui
 from modules.config import DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, GROOVEKRAFT_USER_AGENT
 import logging
@@ -79,7 +79,7 @@ def connect_to_discogs(db_path):
 
 
 def normalize_artist(name):
-    artist = utils.trim_if_ends_with_number_in_brackets(name)
+    artist = trim_if_ends_with_number_in_brackets(name)
     if artist == 'Various':
         artist = 'Various Artists'
     return artist
@@ -94,14 +94,14 @@ def normalize_format(format0):
 
 
 def normalize_country(country):
-    return utils.normalize_country_name(country)
+    return normalize_country_name(country)
 
 
 def normalize_barcodes(identifiers):
     barcodes = []
     for identifier in identifiers:
         if identifier['type'].casefold() == 'barcode':
-            barcodes.append(utils.sanitise_identifier(identifier['value']))
+            barcodes.append(sanitise_identifier(identifier['value']))
     return ', '.join(sorted(set(barcodes)))
 
 
@@ -119,7 +119,7 @@ def discogs_summarise_release(release=None, id=None, discogs_client=None):
     id = release.id
     output.append(f'Discogs {id}')
 
-    artist = utils.trim_if_ends_with_number_in_brackets(release.artists[0].name)
+    artist = trim_if_ends_with_number_in_brackets(release.artists[0].name)
     if artist:
         output.append(artist)
 
@@ -218,7 +218,7 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
         master_id = release.master.id if release.master else 0
 
         row = fetch_row(db_path, release.id)
-        release_date = utils.earliest_date(row.release_date if row else None, release_date)
+        release_date = earliest_date(row.release_date if row else None, release_date)
 
         if row:
 

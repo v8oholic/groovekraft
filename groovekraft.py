@@ -11,9 +11,9 @@ import configparser
 import os
 from pathlib import Path
 
-from modules import db
 from modules.config import AppConfig, APP_NAME
 from modules.gui import run_gui
+from modules.db import initialize_db
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -62,6 +62,6 @@ if __name__ == "__main__":
     config.db_path = os.path.join(config.root_folder, "database", "GrooveKraft.db")
     config.images_folder = os.path.join(config.root_folder, "images")
 
-    db.initialize_db(config.db_path)
+    initialize_db(config.db_path)
 
     run_gui(config)

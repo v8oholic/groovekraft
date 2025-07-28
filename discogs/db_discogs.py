@@ -1,13 +1,13 @@
-from modules import db
+from modules.db import context_manager, get_connection, row_change, row_ignore_change
 
 import logging
 
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
 
 
 def update_field_if_changed(db_path, discogs_id, field_name, new_value, callback=print):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute(f"""
             SELECT {field_name}
             FROM discogs_releases
@@ -20,7 +20,7 @@ def update_field_if_changed(db_path, discogs_id, field_name, new_value, callback
         if old_value == new_value:
             return
 
-        callback(db.row_change(discogs_id, field_name, new_value, old_value))
+        callback(row_change(discogs_id, field_name, new_value, old_value))
         cur.execute(f"""
             UPDATE discogs_releases
             SET {field_name} = ?
@@ -60,7 +60,7 @@ def set_master_id(db_path, discogs_id, new_value, callback=print):
 
 
 def set_release_date(db_path, discogs_id, new_value, force=False, callback=print):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("""
             SELECT release_date, release_date_locked
             FROM discogs_releases
@@ -80,16 +80,16 @@ def set_release_date(db_path, discogs_id, new_value, force=False, callback=print
 
         if not force:
             if old_value is not None and (new_value is None or len(new_value) < len(old_value)):
-                logger.debug(db.row_ignore_change(
+                logger.debug(row_ignore_change(
                     discogs_id, 'release_date', new_value, old_value, "shorter"))
                 return
 
             if old_value is not None and (old_value < new_value and len(old_value) >= len(new_value)):
-                logger.debug(db.row_ignore_change(
+                logger.debug(row_ignore_change(
                     discogs_id, 'release_date', new_value, old_value, "newer"))
                 return
 
-        callback(db.row_change(discogs_id, 'release_date', new_value, old_value))
+        callback(row_change(discogs_id, 'release_date', new_value, old_value))
 
         cur.execute("""
             UPDATE discogs_releases
@@ -115,7 +115,7 @@ def insert_row(
         sort_name=None,
         master_id=None):
 
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("""
             INSERT INTO discogs_releases (discogs_id, artist, title, country, format, year, barcodes, catnos, release_date, sort_name, master_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -124,7 +124,7 @@ def insert_row(
 
 def fetch_row(db_path, discogs_id):
 
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("""
             SELECT *
             FROM discogs_releases
@@ -136,7 +136,7 @@ def fetch_row(db_path, discogs_id):
 
 def fetch_discogs_release_rows(db_path, where=None):
 
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
 
         query = []
         query.append("SELECT * FROM discogs_releases")
@@ -150,7 +150,7 @@ def fetch_discogs_release_rows(db_path, where=None):
 
 
 def fetch_unmatched_discogs_release_rows(db_path):
-    conn = db.get_connection(db_path)
+    conn = get_connection(db_path)
     cursor = conn.cursor()
 
     query = []
@@ -167,7 +167,7 @@ def fetch_unmatched_discogs_release_rows(db_path):
 
 def fetch_row_by_discogs_id(db_path, discogs_id):
 
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute('SELECT * FROM items WHERE release_id = ?', (discogs_id,))
         row = cur.fetchone()
 
@@ -176,14 +176,14 @@ def fetch_row_by_discogs_id(db_path, discogs_id):
 
 # OAuth token management for Discogs
 def set_oauth_tokens(db_path, oauth_token, oauth_token_secret):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("DELETE FROM discogs_oauth")
         cur.execute("INSERT INTO discogs_oauth (oauth_token, oauth_token_secret) VALUES (?, ?)",
                     (oauth_token, oauth_token_secret))
 
 
 def get_oauth_tokens(db_path):
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("SELECT oauth_token, oauth_token_secret FROM discogs_oauth LIMIT 1")
         row = cur.fetchone()
     return row
@@ -196,19 +196,19 @@ def set_primary_image_uri(db_path, discogs_id, new_value, callback=print):
 # Additional utility functions
 def get_all_discogs_ids(db_path):
     """Return a list of all discogs_id values in the releases table."""
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("SELECT discogs_id FROM discogs_releases")
         return [row[0] for row in cur.fetchall()]
 
 
 def fetch_all_rows(db_path):
     """Return all rows from discogs_releases."""
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("SELECT * FROM discogs_releases")
         return cur.fetchall()
 
 
 def delete_discogs_release_row(db_path, discogs_id):
     """Delete a row from discogs_releases by discogs_id."""
-    with db.context_manager(db_path) as cur:
+    with context_manager(db_path) as cur:
         cur.execute("DELETE FROM discogs_releases WHERE discogs_id = ?", (discogs_id,))

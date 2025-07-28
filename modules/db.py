@@ -17,6 +17,7 @@ CREATE_IDX_FORMAT = "CREATE INDEX IF NOT EXISTS idx_format ON discogs_releases (
 
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
 
 CREATE_DISCOGS_RELEASES_TABLE = """
     CREATE TABLE IF NOT EXISTS discogs_releases (
@@ -143,7 +144,7 @@ def migrate_add_release_date_locked(db_path):
 
 
 @contextmanager
-def context_manager(db_path: str, read_only: bool = False):
+def context_manager(db_path: str, read_only: bool = False, namedtuple: bool = True):
     """Wrapper to take care of committing and closing a database
 
     See https://stackoverflow.com/questions/67436362/decorator-for-sqlite3/67436763
@@ -151,7 +152,12 @@ def context_manager(db_path: str, read_only: bool = False):
     try:
         conn = sqlite3.connect(f'file:{db_path}?mode=ro',
                                uri=True) if read_only else sqlite3.connect(db_path)
-        conn.row_factory = namedtuple_factory
+
+        if namedtuple:
+            conn.row_factory = namedtuple_factory
+        else:
+            conn.row_factory = sqlite3.Row
+
         cur = conn.cursor()
         yield cur
     except Exception as e:
