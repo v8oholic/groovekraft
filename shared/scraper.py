@@ -10,7 +10,7 @@ import dateparser
 import logging
 
 from discogs import db_discogs
-from modules import utils, db
+from shared import utils, db
 
 logger = logging.getLogger(__name__)
 

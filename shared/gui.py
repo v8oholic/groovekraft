@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QDialogButtonBox
-from modules.utils import is_today_anniversary, is_month_anniversary, parse_and_humanize_date, humanize_date_delta
-from modules.db import context_manager
+from shared.utils import is_today_anniversary, is_month_anniversary, parse_and_humanize_date, humanize_date_delta
+from shared.db import context_manager
 import musicbrainz.db_musicbrainz as db_musicbrainz
-from modules.config import AppConfig, GROOVEKRAFT_USER_AGENT, GROOVEKRAFT_VERSION
+from shared.config import AppConfig, GROOVEKRAFT_USER_AGENT, GROOVEKRAFT_VERSION
 from musicbrainz import mb_matcher, mb_auth_gui
 from discogs import discogs_importer
 from PyQt6.QtWidgets import (

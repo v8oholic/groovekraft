@@ -1,7 +1,7 @@
 import logging
 from discogs import discogs_importer
-from modules import db, utils
-from modules import config
+from shared import db, utils
+from shared import config
 
 
 def fls(data_str, length):

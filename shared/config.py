@@ -1,6 +1,6 @@
 import logging
 import os
-from modules.version import __version__
+from shared.version import __version__
 logger = logging.getLogger(__name__)
 
 APP_NAME = 'GrooveKraft'

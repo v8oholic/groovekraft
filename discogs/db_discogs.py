@@ -1,4 +1,4 @@
-from modules.db import context_manager, get_connection, row_change, row_ignore_change
+from shared.db import context_manager, get_connection, row_change, row_ignore_change
 
 import logging
 

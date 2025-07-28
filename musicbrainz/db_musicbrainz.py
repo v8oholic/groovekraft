@@ -1,4 +1,4 @@
-from modules.db import context_manager, row_change
+from shared.db import context_manager, row_change
 import logging
 import hashlib
 

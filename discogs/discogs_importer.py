@@ -13,11 +13,11 @@ from discogs.db_discogs import (
     set_country, set_barcodes, set_catnos, set_year, set_master_id, set_release_date,
     set_sort_name, insert_row, set_primary_image_uri, get_all_discogs_ids, fetch_all_rows, delete_discogs_release_row
 )
-from modules.utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name, earliest_date
+from shared.utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name, earliest_date
 from discogs.discogs_oauth_gui import prompt_oauth_verifier_gui
-from modules.config import DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, GROOVEKRAFT_USER_AGENT
+from shared.config import DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, GROOVEKRAFT_USER_AGENT
 import logging
-from modules.config import AppConfig
+from shared.config import AppConfig
 
 logger = logging.getLogger(__name__)
 

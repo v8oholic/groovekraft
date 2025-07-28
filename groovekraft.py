@@ -11,9 +11,9 @@ import configparser
 import os
 from pathlib import Path
 
-from modules.config import AppConfig, APP_NAME
-from modules.gui import run_gui
-from modules.db import initialize_db
+from shared.config import AppConfig, APP_NAME
+from shared.gui import run_gui
+from shared.db import initialize_db
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
