@@ -298,6 +298,12 @@ class CollectionViewer(QMainWindow):
         tab_widget.addTab(matcher_tab, "MusicBrainz Matcher")
 
         self.setCentralWidget(tab_widget)
+        self.tab_widget = tab_widget  # Store reference for later
+
+        def handle_tab_changed(idx):
+            if self.tab_widget.tabText(idx) == "On this day" and self.populate_on_this_day_table_fn:
+                self.populate_on_this_day_table_fn()
+        tab_widget.currentChanged.connect(handle_tab_changed)
         self.esc_shortcut = QShortcut(QKeySequence("Escape"), self)
         self.esc_shortcut.activated.connect(self.close)
         self.show()
@@ -317,7 +323,7 @@ class CollectionViewer(QMainWindow):
             find_filter = ''
             format_filter = ''
 
-            with context_manager(self.cfg.db_path) as cur:
+            with context_manager(self.cfg.db_path, namedtuple=False) as cur:
                 query = []
                 query.append(
                     'SELECT d.sort_name AS artist, d.title, d.format, d.country, d.release_date, d.discogs_id')
@@ -338,10 +344,10 @@ class CollectionViewer(QMainWindow):
             # filter rows
             rows = []
             for item in items:
-                if item.release_date and len(item.release_date) == 10:
-                    include = is_today_anniversary(item.release_date)
-                elif item.release_date and len(item.release_date) == 7:
-                    include = is_month_anniversary(item.release_date)
+                if item["release_date"] and len(item["release_date"]) == 10:
+                    include = is_today_anniversary(item["release_date"])
+                elif item["release_date"] and len(item["release_date"]) == 7:
+                    include = is_month_anniversary(item["release_date"])
                 else:
                     include = False
                 if include:
@@ -354,7 +360,13 @@ class CollectionViewer(QMainWindow):
             table.setRowCount(len(rows))
             table.verticalHeader().setDefaultSectionSize(110)
 
-            for row_idx, (artist, title, format, country, release_date, discogs_id) in enumerate(rows):
+            for row_idx, item in enumerate(rows):
+                artist = item["artist"]
+                title = item["title"]
+                format = item["format"]
+                country = item["country"]
+                release_date = item["release_date"]
+                discogs_id = item["discogs_id"]
                 # Column 0: Thumbnail
                 image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
                 if os.path.exists(image_path):
