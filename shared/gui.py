@@ -443,6 +443,18 @@ class CollectionViewer(QMainWindow):
         format_input = QLineEdit()
         filter_layout.addWidget(format_input)
 
+        # Year From Filter
+        filter_layout.addWidget(QLabel("Year from:"))
+        year_from_input = QLineEdit()
+        year_from_input.setPlaceholderText("e.g. 1975")
+        filter_layout.addWidget(year_from_input)
+
+        # Year To Filter
+        filter_layout.addWidget(QLabel("Year to:"))
+        year_to_input = QLineEdit()
+        year_to_input.setPlaceholderText("e.g. 1986")
+        filter_layout.addWidget(year_to_input)
+
         clear_button = QPushButton("Clear Filters")
         filter_layout.addWidget(clear_button)
 
@@ -465,7 +477,9 @@ class CollectionViewer(QMainWindow):
             current_filters = {
                 "artist": artist_input.text(),
                 "title": title_input.text(),
-                "format": format_input.text()
+                "format": format_input.text(),
+                "year_from": year_from_input.text(),
+                "year_to": year_to_input.text()
             }
             if last_filter_values is not None and current_filters == last_filter_values:
                 return  # No real change, skip repopulating
@@ -492,6 +506,12 @@ class CollectionViewer(QMainWindow):
                 if format_input.text():
                     filters.append('d.format LIKE ?')
                     params.append(f"%{format_input.text()}%")
+                if year_from_input.text():
+                    filters.append('substr(d.release_date, 1, 4) >= ?')
+                    params.append(year_from_input.text())
+                if year_to_input.text():
+                    filters.append('substr(d.release_date, 1, 4) <= ?')
+                    params.append(year_to_input.text())
 
                 if filters:
                     query.append("WHERE " + " AND ".join(filters))
@@ -666,12 +686,16 @@ class CollectionViewer(QMainWindow):
         artist_input.textChanged.connect(lambda: filter_timer.start())
         title_input.textChanged.connect(lambda: filter_timer.start())
         format_input.textChanged.connect(lambda: filter_timer.start())
+        year_from_input.textChanged.connect(lambda: filter_timer.start())
+        year_to_input.textChanged.connect(lambda: filter_timer.start())
 
         def clear_filters():
             nonlocal last_filter_values
             artist_input.clear()
             title_input.clear()
             format_input.clear()
+            year_from_input.clear()
+            year_to_input.clear()
             last_filter_values = None  # Force repopulation
             filter_timer.start()
 
