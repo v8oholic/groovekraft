@@ -3,7 +3,7 @@
 # Inject dynamic version
 import sys
 sys.path.insert(0, '.')
-from modules.version import __version__
+from shared.version import __version__
 
 a = Analysis(
     ['groovekraft.py'],
