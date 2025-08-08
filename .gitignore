@@ -95,7 +95,7 @@ discogs_data/
 *.db
 
 # Images downloaded from Discogs
-images/
+thumbs/
 
 # Allow GrooveKraft.spec
 !GrooveKraft.spec

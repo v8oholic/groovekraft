@@ -12,6 +12,24 @@
 - Missing or incorrect release dates can be manually entered
 - Match quality shown with traffic-light icons (Red, Amber, Yellow, Green)
 
+### On This Day
+
+![On This Day](docs/images/on_this_day.png)
+
+This shows anniversaries in your collection.
+
+### Collection
+
+![Collection](docs/images/collection.png)
+
+This displays items in your collection. You can filter by several fields.
+
+###
+
+![Collection](docs/images/randomiser.png)
+
+This displays a random item from your collection. Give it a listen!
+
 ## Operation
 
 To import a collection from Discogs, run the Discogs Importer. The first time, you will be asked to authorise an OAuth token. The Discogs importer
@@ -42,25 +60,19 @@ Whenever the importer is run, the MusicBrainz matcher should be run afterwards. 
 Release dates are an important part of the application. A summary of how they are derived and how they can be overridden is as follows:
 
 - Release dates can be a full date (most releases), a month and year (a small percentage), or just a year (rare).
-- The initial import will set the release date to a year only. That is all the Discogs API provides.
-- Although Discogs has some full release dates (displayed on the website) they are unavailable via the API.
+- The initial import will set the release date from Discogs. It may be just a year, or a month and year.
 - The MusicBrainz match will attempt to match each Discogs release with a MusicBrainz release, which will contain a release date.
-- There is an experimental scraper to scrape full release dates from the Discogs website, but this is not currently active.
-- Release dates can be manually entered by double clicking on the cell in the collection viewer.
-- Automatic release dates are set from the master release, so it doesn't matter if you have a re-issue or re-release.
+- Release dates can be manually entered by double clicking on the cell in the collection viewer. The release date field can be locked to prevent overwrites.
+- Release dates are set from the master release, so it doesn't matter if you have a re-issue or re-release.
 
-Other sources of release dates include:
+As well as Discogs and MusicBrainz, you may find other sources of release dates at:
 
 - Wikipedia
 - 45worlds.com
 - Social media posts
 - Discogs release web page
 
-When release dates are manually entered, they are not totally locked, but they are protected against automatic updates as follows:
-
-- If the local copy is a full release date, and the potential update from MusicBrainz is shorter (just month and year, or just year) then the potential update is ignored.
-- If the local release date and the MusicBrainz release date are the same length, then the MusicBrainz release date will be ignored unless
-it is earlier than the local release date.
+When release dates are manually entered, they can be protected against automatic updates by setting the lock.
 
 Release dates are worth setting manually where they are missing. Otherwise, On This Day won't be as effective.
 
@@ -68,14 +80,17 @@ Release dates are worth setting manually where they are missing. Otherwise, On T
 
 ### Core Requirements
 
-- Python 3.11+
-- Discogs account
+- Discogs account with a collection entered
 - MusicBrainz account
+
+### Simple Installation
+
+To run as a packaged app on a Mac, just download the .dmg file. Double click it and drag the application to Applications.
 
 ### Optional for Building macOS App Bundle
 
 - macOS (tested)
-- Virtual environment (recommended)
+- Conda virtual environment (recommended)
 - `pyinstaller` installed (`pip install pyinstaller`)
 - `sips` and `iconutil` (macOS built-in utilities)
 
@@ -112,12 +127,10 @@ To build GrooveKraft into a standalone macOS application:
 
 ```bash
 conda activate groovekraft
-pyinstaller GrooveKraft.spec
+./make_install.sh
 ```
 
-(This ensures all resources like icons and additional files are properly bundled. For quick testing only, you can still build with `pyinstaller --windowed --icon=icon.icns groovekraft.py`, but this may miss extra files.)
-
-After building, create a `.dmg` file manually or with a tool like `create-dmg`.
+This ensures all resources like icons and additional files are properly bundled. and creates a `.dmg` file.
 
 ## Usage
 
