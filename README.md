@@ -2,6 +2,8 @@
 
 **GrooveKraft** is a fast, lightweight music collection manager that uses Discogs and MusicBrainz to enrich your collection with detailed metadata and artwork.
 
+Note: it's a work in progress, and subject to change.
+
 ## Features
 
 - Import your Discogs collection into a local database
