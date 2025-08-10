@@ -5,7 +5,9 @@ import requests
 # Discogs API logic
 import discogs_client
 from discogs_client.exceptions import HTTPError
+
 import json
+import sys
 
 
 from discogs.db_discogs import (
@@ -157,9 +159,14 @@ def likely_match(orphan, candidate):
 
 def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_cancel=lambda: False, progress_callback=lambda pct: None):
 
-    if __debug__:
-        import debugpy
-        debugpy.breakpoint()
+    # Only enable debugpy breakpoints in dev, never in a frozen (PyInstaller) app
+    if __debug__ and not getattr(sys, 'frozen', False):
+        try:
+            import debugpy
+            debugpy.breakpoint()
+        except Exception:
+            # Ignore if debugpy is missing or cannot attach
+            pass
 
     db_path = cfg.db_path
     images_folder = cfg.images_folder

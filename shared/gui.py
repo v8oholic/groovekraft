@@ -926,11 +926,13 @@ class CollectionViewer(QMainWindow):
                 self._cancel_requested = True
 
             def run(self):
-                if is_debugging():
+                # Only enable debugpy when running under a debugger AND not in a frozen (PyInstaller) app
+                if DEBUG_MODE and not getattr(sys, 'frozen', False):
                     try:
                         import debugpy
                         debugpy.debug_this_thread()
-                    except ImportError:
+                    except Exception:
+                        # Silently ignore any debug attachment failures in dev
                         pass
 
                 try:
