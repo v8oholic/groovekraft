@@ -315,31 +315,162 @@ class CollectionViewer(QMainWindow):
 
         # --- Date header with navigation ---
         from PyQt6.QtCore import QDate
-        header_layout = QHBoxLayout()
+        # Outer layout to center a fixed-width container
+        outer_header_layout = QHBoxLayout()
+
+        # Inner container that will be centered and constrained to half the parent width
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
 
         prev_btn = QPushButton("◀")
         next_btn = QPushButton("▶")
-        for btn in (prev_btn, next_btn):
-            btn.setFixedWidth(40)
-            btn.setStyleSheet("font-size: 18px; padding: 4px 8px;")
 
         date_label = QLabel()
         date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         date_label.setStyleSheet("font-size: 18px; font-weight: bold; margin: 6px 0;")
 
-        # Keep currently selected date (defaults to today)
-        selected_date = QDate.currentDate()
+        # Extra controls: Today + Pick (single set)
+        from PyQt6.QtCore import QSize
+        from PyQt6.QtWidgets import QStyle
+
+        today_btn = QPushButton()
+        pick_btn = QPushButton()
+
+        today_btn.setToolTip("Today")
+        pick_btn.setToolTip("Pick date")
+
+        # Try to use theme icons, fallback to standard pixmaps
+        icon_today = QIcon.fromTheme("view-calendar-today")
+        if icon_today.isNull():
+            icon_today = self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+        today_btn.setIcon(icon_today)
+        today_btn.setIconSize(QSize(18, 18))
+
+        icon_pick = QIcon.fromTheme("x-office-calendar")
+        if icon_pick.isNull():
+            icon_pick = self.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton)
+        pick_btn.setIcon(icon_pick)
+        pick_btn.setIconSize(QSize(18, 18))
+
+        # Unified nav button look (applies to ◀ ▶ Today Pick)
+        btn_style = (
+            "QPushButton {"
+            "  font-size: 16px;"
+            "  padding: 4px 8px;"
+            "  min-height: 28px;"
+            "  border: 1px solid #A9A9A9;"
+            "  border-radius: 6px;"
+            "  background: #F2F2F2;"
+            "}"
+            "QPushButton:hover { background: #E6E6E6; }"
+            "QPushButton:pressed { background: #DCDCDC; }"
+        )
+        for btn in (prev_btn, next_btn, today_btn, pick_btn):
+            btn.setFixedWidth(40)
+            btn.setStyleSheet(btn_style)
+            btn.setFlat(False)
+
+        # Track just month and day (year is irrelevant). Use a leap-year anchor only for formatting.
+        today = QDate.currentDate()
+        current_month = today.month()
+        current_day = today.day()
 
         def update_date_label():
-            # Example: Sunday, 10 August 2025
-            date_label.setText(selected_date.toString("dddd, d MMMM yyyy"))
+            # Display only day and month, e.g. "10 August"
+            date_label.setText(QDate(2000, current_month, current_day).toString("d MMMM"))
 
+        # Buttons at the ends, date centered within the inner container
         header_layout.addWidget(prev_btn)
+        header_layout.addWidget(today_btn)
         header_layout.addStretch(1)
         header_layout.addWidget(date_label)
         header_layout.addStretch(1)
+        header_layout.addWidget(pick_btn)
         header_layout.addWidget(next_btn)
-        layout.addLayout(header_layout)
+
+        # Center the inner container and make it half the width of the parent widget
+        outer_header_layout.addStretch(1)
+        outer_header_layout.addWidget(header_container)
+        outer_header_layout.addStretch(1)
+        layout.addLayout(outer_header_layout)
+
+        # Helper to keep header_container at ~50% of the parent width (with a sensible minimum)
+        from PyQt6.QtCore import QEvent
+
+        def _update_header_width():
+            try:
+                header_container.setFixedWidth(max(360, widget.width() // 2))
+            except Exception:
+                pass
+        _update_header_width()
+
+        # Install an event filter to react to resize events and keep width at 50%
+        class _HeaderSizer(QObject):
+            def eventFilter(self, obj, event):
+                if obj is widget and event.type() == QEvent.Type.Resize:
+                    _update_header_width()
+                return False
+        self._on_this_day_header_sizer = _HeaderSizer()
+        widget.installEventFilter(self._on_this_day_header_sizer)
+
+        # Days per month with Feb=29 to allow Feb 29 selection
+        DAYS_IN_MONTH = {1: 31, 2: 29, 3: 31, 4: 30, 5: 31,
+                         6: 30, 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
+
+        def goto_today():
+            nonlocal current_month, current_day
+            t = QDate.currentDate()
+            current_month, current_day = t.month(), t.day()
+            populate_on_this_day_table()
+
+        def open_pick_dialog():
+            nonlocal current_month, current_day
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Select day and month")
+            lay = QVBoxLayout(dlg)
+
+            form = QFormLayout()
+            month_combo = QComboBox()
+            # Month names 1..12
+            month_names = [QDate(2000, m, 1).toString("MMMM") for m in range(1, 13)]
+            month_combo.addItems(month_names)
+            day_combo = QComboBox()
+
+            def refill_days(m):
+                day_combo.clear()
+                for d in range(1, DAYS_IN_MONTH[m] + 1):
+                    day_combo.addItem(str(d))
+
+            # init with current
+            month_combo.setCurrentIndex(current_month - 1)
+            refill_days(current_month)
+            # clamp current_day to available days in month
+            d0 = min(current_day, DAYS_IN_MONTH[current_month])
+            day_combo.setCurrentIndex(d0 - 1)
+
+            def on_month_changed(idx):
+                m = idx + 1
+                prev_day = int(day_combo.currentText()) if day_combo.currentText() else 1
+                refill_days(m)
+                day_combo.setCurrentIndex(min(prev_day, DAYS_IN_MONTH[m]) - 1)
+            month_combo.currentIndexChanged.connect(on_month_changed)
+
+            form.addRow("Month:", month_combo)
+            form.addRow("Day:", day_combo)
+            lay.addLayout(form)
+
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                                       QDialogButtonBox.StandardButton.Cancel)
+            lay.addWidget(buttons)
+            buttons.accepted.connect(dlg.accept)
+            buttons.rejected.connect(dlg.reject)
+
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                current_month = month_combo.currentIndex() + 1
+                current_day = int(day_combo.currentText())
+                populate_on_this_day_table()
 
         update_date_label()
 
@@ -371,9 +502,10 @@ class CollectionViewer(QMainWindow):
                 cur.execute(' '.join(query))
                 items = cur.fetchall()
 
-            # Filter rows using the currently selected date
+            # Filter rows using the currently selected month/day only
             from PyQt6.QtCore import QDate
-            target = selected_date
+            target_month = current_month
+            target_day = current_day
             update_date_label()
 
             rows = []
@@ -386,7 +518,7 @@ class CollectionViewer(QMainWindow):
                         try:
                             y, m, d = map(int, rd.split('-'))
                             qd = QDate(y, m, d)
-                            if qd.isValid() and qd.month() == target.month() and qd.day() == target.day():
+                            if qd.isValid() and m == target_month and d == target_day:
                                 include = True
                         except Exception:
                             include = False
@@ -396,7 +528,7 @@ class CollectionViewer(QMainWindow):
                             y, m = rd.split('-')
                             y = int(y)
                             m = int(m)
-                            if 1 <= m <= 12 and 1900 <= y <= 2100 and m == target.month():
+                            if 1 <= m <= 12 and 1900 <= y <= 2100 and m == target_month:
                                 include = True
                         except Exception:
                             include = False
@@ -439,13 +571,13 @@ class CollectionViewer(QMainWindow):
                 details_label.setContentsMargins(10, 0, 10, 0)
                 table.setCellWidget(row_idx, 1, details_label)
 
-                # Column 2: Release Date (humanized, bold + delta)
+                # Column 2: Release Date (two lines, no wrapping within a line)
                 release_text = f"<b>{parse_and_humanize_date(release_date)}</b><br>{humanize_date_delta(release_date)}"
                 release_label = QLabel()
                 release_label.setText(release_text)
                 release_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
                                            Qt.AlignmentFlag.AlignVCenter)
-                release_label.setWordWrap(True)
+                release_label.setWordWrap(False)
                 release_label.setContentsMargins(10, 0, 10, 0)
                 table.setCellWidget(row_idx, 2, release_label)
 
@@ -464,19 +596,41 @@ class CollectionViewer(QMainWindow):
 
             table.resizeColumnsToContents()
 
-        # Navigation handlers: move selected date by +/- 1 day and repopulate
+        # Navigation handlers: move selected month/day (no year) and repopulate
         def goto_prev_day():
-            nonlocal selected_date
-            selected_date = selected_date.addDays(-1)
+            nonlocal current_month, current_day
+            days_in_month = {1: 31, 2: 29, 3: 31, 4: 30, 5: 31,
+                             6: 30, 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
+            if current_day > 1:
+                current_day -= 1
+            else:
+                # move to previous month
+                if current_month == 1:
+                    current_month = 12
+                else:
+                    current_month -= 1
+                current_day = days_in_month[current_month]
             populate_on_this_day_table()
 
         def goto_next_day():
-            nonlocal selected_date
-            selected_date = selected_date.addDays(1)
+            nonlocal current_month, current_day
+            days_in_month = {1: 31, 2: 29, 3: 31, 4: 30, 5: 31,
+                             6: 30, 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
+            if current_day < days_in_month[current_month]:
+                current_day += 1
+            else:
+                # move to next month
+                if current_month == 12:
+                    current_month = 1
+                else:
+                    current_month += 1
+                current_day = 1
             populate_on_this_day_table()
 
         prev_btn.clicked.connect(goto_prev_day)
         next_btn.clicked.connect(goto_next_day)
+        today_btn.clicked.connect(goto_today)
+        pick_btn.clicked.connect(open_pick_dialog)
 
         # Initial population
         populate_on_this_day_table()
@@ -612,7 +766,7 @@ class CollectionViewer(QMainWindow):
                 details_label.setContentsMargins(10, 0, 10, 0)
                 table.setCellWidget(row_idx, 1, details_label)
 
-                # Column 2: Release Date (QLabel, bold humanized + delta, with lock if needed)
+                # Column 2: Release Date (two lines, no wrapping within a line)
                 release_human = parse_and_humanize_date(release_date)
                 release_delta = humanize_date_delta(release_date)
                 locked = bool(release_date_locked) if release_date_locked is not None else False
@@ -624,7 +778,7 @@ class CollectionViewer(QMainWindow):
                 release_label.setText(release_text)
                 release_label.setAlignment(Qt.AlignmentFlag.AlignLeft |
                                            Qt.AlignmentFlag.AlignVCenter)
-                release_label.setWordWrap(True)
+                release_label.setWordWrap(False)
                 release_label.setContentsMargins(10, 0, 10, 0)
                 if locked:
                     release_label.setToolTip("Release date is locked; cannot be changed by import.")
