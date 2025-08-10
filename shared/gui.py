@@ -313,6 +313,36 @@ class CollectionViewer(QMainWindow):
         layout = QVBoxLayout()
         widget.setLayout(layout)
 
+        # --- Date header with navigation ---
+        from PyQt6.QtCore import QDate
+        header_layout = QHBoxLayout()
+
+        prev_btn = QPushButton("◀")
+        next_btn = QPushButton("▶")
+        for btn in (prev_btn, next_btn):
+            btn.setFixedWidth(40)
+            btn.setStyleSheet("font-size: 18px; padding: 4px 8px;")
+
+        date_label = QLabel()
+        date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        date_label.setStyleSheet("font-size: 18px; font-weight: bold; margin: 6px 0;")
+
+        # Keep currently selected date (defaults to today)
+        selected_date = QDate.currentDate()
+
+        def update_date_label():
+            # Example: Sunday, 10 August 2025
+            date_label.setText(selected_date.toString("dddd, d MMMM yyyy"))
+
+        header_layout.addWidget(prev_btn)
+        header_layout.addStretch(1)
+        header_layout.addWidget(date_label)
+        header_layout.addStretch(1)
+        header_layout.addWidget(next_btn)
+        layout.addLayout(header_layout)
+
+        update_date_label()
+
         table = QTableWidget()
         layout.addWidget(table)
         self.on_this_day_table = table
@@ -341,15 +371,35 @@ class CollectionViewer(QMainWindow):
                 cur.execute(' '.join(query))
                 items = cur.fetchall()
 
-            # filter rows
+            # Filter rows using the currently selected date
+            from PyQt6.QtCore import QDate
+            target = selected_date
+            update_date_label()
+
             rows = []
             for item in items:
-                if item["release_date"] and len(item["release_date"]) == 10:
-                    include = is_today_anniversary(item["release_date"])
-                elif item["release_date"] and len(item["release_date"]) == 7:
-                    include = is_month_anniversary(item["release_date"])
-                else:
-                    include = False
+                rd = item["release_date"]
+                include = False
+                if rd:
+                    if len(rd) == 10 and '-' in rd:
+                        # YYYY-MM-DD: match month & day with target
+                        try:
+                            y, m, d = map(int, rd.split('-'))
+                            qd = QDate(y, m, d)
+                            if qd.isValid() and qd.month() == target.month() and qd.day() == target.day():
+                                include = True
+                        except Exception:
+                            include = False
+                    elif len(rd) == 7 and '-' in rd:
+                        # YYYY-MM: match month with target
+                        try:
+                            y, m = rd.split('-')
+                            y = int(y)
+                            m = int(m)
+                            if 1 <= m <= 12 and 1900 <= y <= 2100 and m == target.month():
+                                include = True
+                        except Exception:
+                            include = False
                 if include:
                     rows.append(item)
 
@@ -413,6 +463,20 @@ class CollectionViewer(QMainWindow):
                 table.setItem(row_idx, 4, match_item)
 
             table.resizeColumnsToContents()
+
+        # Navigation handlers: move selected date by +/- 1 day and repopulate
+        def goto_prev_day():
+            nonlocal selected_date
+            selected_date = selected_date.addDays(-1)
+            populate_on_this_day_table()
+
+        def goto_next_day():
+            nonlocal selected_date
+            selected_date = selected_date.addDays(1)
+            populate_on_this_day_table()
+
+        prev_btn.clicked.connect(goto_prev_day)
+        next_btn.clicked.connect(goto_next_day)
 
         # Initial population
         populate_on_this_day_table()
