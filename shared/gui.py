@@ -1087,7 +1087,20 @@ class CollectionViewer(QMainWindow):
                 row = cur.fetchone()
 
                 if row:
-                    data = dict(zip(self.detail_widget.labels.keys(), row))
+                    # Format release date to be more user-friendly
+                    release_human = parse_and_humanize_date(row.release_date)
+                    release_delta = humanize_date_delta(row.release_date)
+                    data = {
+                        'Artist': row.artist,
+                        'Title': row.title,
+                        'Format': row.format,
+                        'Country': row.country,
+                        'Release Date': f"{release_human}",
+                        'Discogs Id': row.discogs_id,
+                        'Catalog Numbers': row.catnos,
+                        'Barcodes': row.barcodes,
+                        'Matched': 'Yes' if row.mbid else 'No'
+                    }
                     self.detail_widget.update_data(data)
 
                     # Load image for the chosen discogs_id
