@@ -948,6 +948,36 @@ class CollectionViewer(QMainWindow):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet("font-size: 18px; font-weight: bold; margin-bottom: 10px;")
         main_layout.addWidget(title_label)
+        from PyQt6.QtCore import QTimer
+
+        # --- Filters (same as Collection) ---
+        r_filter_layout = QHBoxLayout()
+        main_layout.addLayout(r_filter_layout)
+
+        r_filter_layout.addWidget(QLabel("Artist:"))
+        r_artist_input = QLineEdit()
+        r_filter_layout.addWidget(r_artist_input)
+
+        r_filter_layout.addWidget(QLabel("Title:"))
+        r_title_input = QLineEdit()
+        r_filter_layout.addWidget(r_title_input)
+
+        r_filter_layout.addWidget(QLabel("Format:"))
+        r_format_input = QLineEdit()
+        r_filter_layout.addWidget(r_format_input)
+
+        r_filter_layout.addWidget(QLabel("Year from:"))
+        r_year_from_input = QLineEdit()
+        r_year_from_input.setPlaceholderText("e.g. 1975")
+        r_filter_layout.addWidget(r_year_from_input)
+
+        r_filter_layout.addWidget(QLabel("Year to:"))
+        r_year_to_input = QLineEdit()
+        r_year_to_input.setPlaceholderText("e.g. 1986")
+        r_filter_layout.addWidget(r_year_to_input)
+
+        r_clear_button = QPushButton("Clear Filters")
+        r_filter_layout.addWidget(r_clear_button)
 
         layout = QHBoxLayout()
         main_layout.addLayout(layout)
@@ -980,7 +1010,7 @@ class CollectionViewer(QMainWindow):
 
         layout.addLayout(wrapper_layout)
 
-        # Add Randomise button centered at the bottom
+        # Add Randomise button centered at the bottom; count appears in the button text
         random_button_layout = QHBoxLayout()
         random_button_layout.addStretch()
         random_button_layout.addWidget(random_button)
@@ -988,30 +1018,112 @@ class CollectionViewer(QMainWindow):
         main_layout.addLayout(random_button_layout)
 
         def load_random_item():
+            # Build filter fragments and params identical to Collection tab
+            where_clauses = []
+            params = []
+            if r_artist_input.text():
+                where_clauses.append('d.sort_name LIKE ?')
+                params.append(f"%{r_artist_input.text()}%")
+            if r_title_input.text():
+                where_clauses.append('d.title LIKE ?')
+                params.append(f"%{r_title_input.text()}%")
+            if r_format_input.text():
+                where_clauses.append('d.format LIKE ?')
+                params.append(f"%{r_format_input.text()}%")
+            if r_year_from_input.text():
+                where_clauses.append('substr(d.release_date, 1, 4) >= ?')
+                params.append(r_year_from_input.text())
+            if r_year_to_input.text():
+                where_clauses.append('substr(d.release_date, 1, 4) <= ?')
+                params.append(r_year_to_input.text())
+
             with context_manager(self.cfg.db_path) as cur:
-                cur.execute(
-                    "SELECT d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, d.catnos, d.barcodes, m.mbid "
-                    "FROM discogs_releases d "
-                    "LEFT JOIN mb_matches m USING(discogs_id) "
-                    "ORDER BY RANDOM() LIMIT 1")
+                # First update the count label
+                count_sql = [
+                    'SELECT COUNT(*) AS cnt FROM discogs_releases d',
+                ]
+                if where_clauses:
+                    count_sql.append('WHERE ' + ' AND '.join(where_clauses))
+                cur.execute(' '.join(count_sql), params)
+                count_row = cur.fetchone()
+                total = int(count_row.cnt) if count_row and hasattr(count_row, 'cnt') else 0
+                # Update button label, enable/disable, tooltip, and size
+                random_button.setText(f"🎲 Randomise ({total})")
+                random_button.setEnabled(total > 0)
+                # Tooltip with proper pluralisation
+                tooltip_count = "1 matching release" if total == 1 else f"{total} matching releases"
+                random_button.setToolTip(f"Randomly pick from {tooltip_count}")
+                random_button.adjustSize()
+
+                # Show/hide content areas based on count
+                if total == 0:
+                    self.image_label.setVisible(False)
+                    self.detail_widget.setVisible(False)
+                else:
+                    self.image_label.setVisible(True)
+                    self.detail_widget.setVisible(True)
+
+                if total == 0:
+                    # Clear UI when nothing matches
+                    self.image_label.clear()
+                    self.detail_widget.update_data({
+                        'Artist': '', 'Title': 'No matching release', 'Format': '', 'Country': '',
+                        'Release Date': '', 'Discogs Id': '', 'Catalog Numbers': '', 'Barcodes': '', 'Matched': ''
+                    })
+                    self.image_label.setVisible(False)
+                    self.detail_widget.setVisible(False)
+                    return
+
+                # Then fetch a single random row that matches the filters
+                select_sql = [
+                    'SELECT d.artist, d.title, d.format, d.country, d.release_date, d.discogs_id, d.catnos, d.barcodes, m.mbid',
+                    'FROM discogs_releases d',
+                    'LEFT JOIN mb_matches m USING(discogs_id)'
+                ]
+                if where_clauses:
+                    select_sql.append('WHERE ' + ' AND '.join(where_clauses))
+                select_sql.append('ORDER BY RANDOM() LIMIT 1')
+                cur.execute(' '.join(select_sql), params)
                 row = cur.fetchone()
+
                 if row:
                     data = dict(zip(self.detail_widget.labels.keys(), row))
                     self.detail_widget.update_data(data)
 
-                    # Load image
+                    # Load image for the chosen discogs_id
                     discogs_id = row.discogs_id
                     image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
                     if os.path.exists(image_path):
                         from PyQt6.QtGui import QPixmap
                         pixmap = QPixmap(image_path)
-                        pixmap = pixmap.scaled(self.image_label.width(), self.image_label.height(
-                        ), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        pixmap = pixmap.scaled(self.image_label.width(), self.image_label.height(),
+                                               Qt.AspectRatioMode.KeepAspectRatio,
+                                               Qt.TransformationMode.SmoothTransformation)
                         self.image_label.setPixmap(pixmap)
                     else:
                         self.image_label.clear()
 
         random_button.clicked.connect(load_random_item)
+
+        # Debounced auto-refresh on filter edits (400 ms)
+        r_filter_timer = QTimer()
+        r_filter_timer.setSingleShot(True)
+        r_filter_timer.setInterval(400)
+        r_filter_timer.timeout.connect(load_random_item)
+        for w in (r_artist_input, r_title_input, r_format_input, r_year_from_input, r_year_to_input):
+            w.textChanged.connect(lambda: r_filter_timer.start())
+
+        def r_clear_filters():
+            r_artist_input.clear()
+            r_title_input.clear()
+            r_format_input.clear()
+            r_year_from_input.clear()
+            r_year_to_input.clear()
+            # Trigger debounced refresh explicitly
+            r_filter_timer.start()
+
+        r_clear_button.clicked.connect(r_clear_filters)
+
         load_random_item()
         return widget
 
