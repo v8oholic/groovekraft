@@ -26,7 +26,7 @@ This shows anniversaries in your collection.
 
 This displays items in your collection. You can filter by several fields.
 
-###
+### Random Release
 
 ![Collection](docs/images/randomiser.png)
 
