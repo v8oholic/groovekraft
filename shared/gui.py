@@ -13,7 +13,20 @@ from PyQt6.QtGui import QKeySequence, QShortcut, QIcon
 from PyQt6.QtCore import Qt
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
+
 import os
+
+# Ensure SSL certificate bundle is available for HTTPS requests (e.g., MusicBrainz)
+try:
+    import certifi
+    # Only set if not already provided by the environment
+    if not os.environ.get('SSL_CERT_FILE'):
+        os.environ['SSL_CERT_FILE'] = certifi.where()
+    if not os.environ.get('REQUESTS_CA_BUNDLE'):
+        os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+except Exception:
+    # If certifi is missing, we proceed; connections may fail on systems without system CA store
+    pass
 
 import musicbrainzngs
 import sys
