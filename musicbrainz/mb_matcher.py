@@ -2,7 +2,12 @@
 
 # MusicBrainz matching logic
 
+import errno
 import logging
+import socket
+import time
+import urllib.error
+from http.client import RemoteDisconnected
 
 from discogs import db_discogs
 from musicbrainz import db_musicbrainz
@@ -34,6 +39,109 @@ PERFECT_SCORE = 100
 MINIMUM_SCORE = 40
 MINIMUM_ARTIST_SCORE = 30
 MINIMUM_TITLE_SCORE = 50
+
+DEFAULT_MB_MAX_RETRIES = 4
+DEFAULT_MB_INITIAL_DELAY = 0.5
+DEFAULT_MB_BACKOFF_FACTOR = 2.0
+DEFAULT_MB_MAX_SLEEP = 8.0
+
+MB_NETWORK_ERROR = getattr(musicbrainzngs.musicbrainz, "NetworkError", None)
+MB_RESPONSE_ERROR = getattr(musicbrainzngs.musicbrainz, "ResponseError", None)
+
+
+def _is_transient_musicbrainz_error(exc):
+    if MB_NETWORK_ERROR and isinstance(exc, MB_NETWORK_ERROR):
+        return True
+
+    if isinstance(exc, (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionResetError, RemoteDisconnected)):
+        return True
+
+    if isinstance(exc, OSError):
+        if getattr(exc, "errno", None) in {errno.ECONNRESET, errno.ETIMEDOUT, errno.ECONNREFUSED, errno.EHOSTUNREACH}:
+            return True
+
+    if MB_RESPONSE_ERROR and isinstance(exc, MB_RESPONSE_ERROR):
+        status = getattr(exc, "status", None)
+        try:
+            status_code = int(status)
+        except (TypeError, ValueError):
+            status_code = None
+        if status_code and 500 <= status_code < 600:
+            return True
+
+    message = str(exc).lower()
+    transient_markers = (
+        "connection reset",
+        "timed out",
+        "timeout",
+        "temporarily unavailable",
+        "temporarily down",
+        "please try again later",
+        "service unavailable",
+        "bad gateway",
+        "internal server error",
+    )
+    if any(marker in message for marker in transient_markers):
+        return True
+
+    return False
+
+
+def musicbrainz_request(func, *args, _callback=None, _max_retries=DEFAULT_MB_MAX_RETRIES,
+                        _initial_delay=DEFAULT_MB_INITIAL_DELAY, _backoff_factor=DEFAULT_MB_BACKOFF_FACTOR,
+                        **kwargs):
+    operation = getattr(func, "__name__", repr(func))
+
+    for attempt in range(1, _max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            transient = _is_transient_musicbrainz_error(exc)
+            should_retry = transient and attempt < _max_retries
+
+            if not should_retry:
+                log_method = logger.error
+                status_code = None
+
+                if MB_RESPONSE_ERROR and isinstance(exc, MB_RESPONSE_ERROR):
+                    status_code = getattr(exc, "status", None)
+                    if status_code is None:
+                        cause = getattr(exc, "cause", None)
+                        status_code = getattr(cause, "code", None)
+                elif isinstance(exc, urllib.error.HTTPError):
+                    status_code = exc.code
+                else:
+                    status_code = getattr(exc, "code", None)
+
+                try:
+                    status_code = int(status_code)
+                except (TypeError, ValueError):
+                    status_code = None
+
+                if status_code == 404:
+                    log_method = logger.debug
+                elif status_code and 400 <= status_code < 500:
+                    log_method = logger.info
+
+                log_method("MusicBrainz call %s failed: %s", operation, exc)
+                raise
+
+            wait_time = min(DEFAULT_MB_MAX_SLEEP, _initial_delay * (_backoff_factor ** (attempt - 1)))
+            logger.warning(
+                "MusicBrainz call %s failed (attempt %d/%d): %s. Retrying in %.1fs",
+                operation,
+                attempt,
+                _max_retries,
+                exc,
+                wait_time
+            )
+            if _callback:
+                _callback(f"⚠️ MusicBrainz connection issue, retrying ({attempt}/{_max_retries})...")
+            time.sleep(wait_time)
+
+
+def _mb_call(func, *args, _callback=None, **kwargs):
+    return musicbrainz_request(func, *args, _callback=_callback, **kwargs)
 
 
 def score_stars(score):
@@ -223,8 +331,11 @@ def disambiguator_score(
         raise Exception("Unable to load MusicBrainz release")
 
     if load_mbid:
-        mb_release = musicbrainzngs.get_release_by_id(
-            load_mbid, includes=['artists', 'artist-credits', 'labels', 'media'])
+        mb_release = _mb_call(
+            musicbrainzngs.get_release_by_id,
+            load_mbid,
+            includes=['artists', 'artist-credits', 'labels', 'media']
+        )
         if mb_release:
             mb_release = mb_release.get('release')
         else:
@@ -310,11 +421,13 @@ def mb_browse_release_groups_by_discogs_master_link(discogs_master_id=0, callbac
     try:
         while all_results < max_release_groups:
 
-            mb_url = musicbrainzngs.browse_urls(
+            mb_url = _mb_call(
+                musicbrainzngs.browse_urls,
                 discogs_url,
                 includes=["release-group-rels"],
                 limit=batch_size,
-                offset=offset
+                offset=offset,
+                _callback=callback
             )
 
             url = mb_url.get('url')
@@ -362,11 +475,13 @@ def mb_browse_releases_by_discogs_release_link(discogs_id=0, callback=print):
     try:
         while all_results < max_releases:
 
-            mb_url = musicbrainzngs.browse_urls(
+            mb_url = _mb_call(
+                musicbrainzngs.browse_urls,
                 discogs_url,
                 includes=["release-rels"],
                 limit=batch_size,
-                offset=offset
+                offset=offset,
+                _callback=callback
             )
 
             url = mb_url.get('url')
@@ -407,11 +522,13 @@ def mb_get_releases_for_release_group(mb_id, callback=print):
 
     try:
         while len(release_list) < max_results:
-            rels = musicbrainzngs.browse_releases(
+            rels = _mb_call(
+                musicbrainzngs.browse_releases,
                 release_group=mb_id,
                 includes=['artist-credits', 'labels', 'media', 'release-groups'],
                 limit=batch_size,
-                offset=batch_offset
+                offset=batch_offset,
+                _callback=callback
             )
 
             # Add new results
@@ -454,8 +571,11 @@ def mb_summarise_release(mb_release=None, mbid=None):
         raise Exception("Unable to load MusicBrainz release")
 
     if load_mbid:
-        mb_release = musicbrainzngs.get_release_by_id(
-            load_mbid, includes=['artists', 'artist-credits', 'labels', 'media'])
+        mb_release = _mb_call(
+            musicbrainzngs.get_release_by_id,
+            load_mbid,
+            includes=['artists', 'artist-credits', 'labels', 'media']
+        )
         if mb_release:
             mb_release = mb_release.get('release')
         else:
@@ -517,8 +637,11 @@ def get_release_and_release_group(mb_release=None, mbid=None):
         load_mbid = mbid
 
     if load_mbid:
-        mb_release = musicbrainzngs.get_release_by_id(
-            load_mbid, includes=['artists', 'artist-credits', 'labels', 'media', 'release-groups'])
+        mb_release = _mb_call(
+            musicbrainzngs.get_release_by_id,
+            load_mbid,
+            includes=['artists', 'artist-credits', 'labels', 'media', 'release-groups']
+        )
         if mb_release:
             mb_release = mb_release.get('release')
         else:
@@ -529,8 +652,11 @@ def get_release_and_release_group(mb_release=None, mbid=None):
 
     release_group_id = mb_release.get('release-group').get('id')
 
-    mb_release_group = musicbrainzngs.get_release_group_by_id(
-        release_group_id, includes=['artists', 'releases', 'artist-credits'])
+    mb_release_group = _mb_call(
+        musicbrainzngs.get_release_group_by_id,
+        release_group_id,
+        includes=['artists', 'releases', 'artist-credits']
+    )
     mb_release_group = mb_release_group.get('release-group')
 
     return mb_release_group, mb_release
@@ -615,12 +741,18 @@ def find_match_by_discogs_link(
         return best_release, best_score
 
     def load_release_and_group(mb_release):
-        mb_release = musicbrainzngs.get_release_by_id(
-            mb_release['id'], includes=["release-groups", 'artists', 'artist-credits']
+        mb_release = _mb_call(
+            musicbrainzngs.get_release_by_id,
+            mb_release['id'],
+            includes=["release-groups", 'artists', 'artist-credits'],
+            _callback=callback
         ).get('release')
         group_id = mb_release['release-group']['id']
-        mb_group = musicbrainzngs.get_release_group_by_id(
-            group_id, includes=['artists', 'releases', 'artist-credits']
+        mb_group = _mb_call(
+            musicbrainzngs.get_release_group_by_id,
+            group_id,
+            includes=['artists', 'releases', 'artist-credits'],
+            _callback=callback
         ).get('release-group')
         return mb_group, mb_release
 
@@ -670,8 +802,11 @@ def find_match_by_discogs_link(
 def mb_match_discogs_release(mb_release_id, discogs_url):
     """ search release relationships for a Discogs link """
 
-    mb_release = musicbrainzngs.get_release_by_id(
-        mb_release_id, includes=["url-rels", 'artists', 'artist-credits'])
+    mb_release = _mb_call(
+        musicbrainzngs.get_release_by_id,
+        mb_release_id,
+        includes=["url-rels", 'artists', 'artist-credits']
+    )
 
     local_release = mb_release.get('release', {})
 
@@ -683,7 +818,7 @@ def mb_match_discogs_release(mb_release_id, discogs_url):
         return False
 
 
-def mb_find_release_group_releases(artist=None, title=None, country=None, format=None, catnos=None, barcodes=None, primary_type=None, discogs_id=0):
+def mb_find_release_group_releases(artist=None, title=None, country=None, format=None, catnos=None, barcodes=None, primary_type=None, discogs_id=0, callback=print):
     """ Search for a release group and release (if discogs_id is specified)
 
     All these fields are searchable, only some are implemented.
@@ -729,8 +864,13 @@ def mb_find_release_group_releases(artist=None, title=None, country=None, format
 
     while len(all_results) < max_results:
 
-        result = musicbrainzngs.search_release_groups(
-            query=query_string, limit=batch_size, offset=offset)
+        result = _mb_call(
+            musicbrainzngs.search_release_groups,
+            query=query_string,
+            limit=batch_size,
+            offset=offset,
+            _callback=callback
+        )
 
         # Add new results
         release_group_list = result.get('release-group-list', [])
@@ -740,7 +880,12 @@ def mb_find_release_group_releases(artist=None, title=None, country=None, format
             # search this batch of release groups
             for group in release_group_list:
                 # fetch the release group including releases - note
-                gr = musicbrainzngs.get_release_group_by_id(group.get('id'), includes=['releases'])
+                gr = _mb_call(
+                    musicbrainzngs.get_release_group_by_id,
+                    group.get('id'),
+                    includes=['releases'],
+                    _callback=callback
+                )
                 gr_group = gr.get('release-group')
                 gr_release_list = gr_group.get('release-list')
                 candidates.extend(gr_release_list)
@@ -828,8 +973,13 @@ def mb_find_releases(artist='', title='', catno=None, primary_type=None, country
     try:
         while len(all_results) < max_results:
             # Fetch results with pagination
-            batch_releases = musicbrainzngs.search_releases(
-                query=query_string, limit=batch_size, offset=offset)
+            batch_releases = _mb_call(
+                musicbrainzngs.search_releases,
+                query=query_string,
+                limit=batch_size,
+                offset=offset,
+                _callback=callback
+            )
 
             # Add new results
             releases = batch_releases.get('release-list', [])
@@ -962,7 +1112,10 @@ def mb_match_barcodes(barcodes):
 
     barcodes_list = utils.normalize_identifier_list(barcodes)
     for barcode in barcodes_list:
-        result = musicbrainzngs.search_releases(barcode=barcode)
+        result = _mb_call(
+            musicbrainzngs.search_releases,
+            barcode=barcode
+        )
         releases = result['release-list']
         if len(releases):
             candidates.extend(releases)
@@ -976,7 +1129,10 @@ def mb_match_catnos(catnos):
 
     catno_list = utils.normalize_identifier_list(catnos)
     for catno in catno_list:
-        result = musicbrainzngs.search_releases(catno=catno)
+        result = _mb_call(
+            musicbrainzngs.search_releases,
+            catno=catno
+        )
         releases = result['release-list']
         if len(releases):
             candidates.extend(releases)
@@ -1034,8 +1190,12 @@ def update_tables_after_match(db_path, discogs_id, mb_release=None, mb_release_g
         mb_release.get('medium-count')
     ]):
         # reload the release including the missing sections
-        mb_release = musicbrainzngs.get_release_by_id(
-            mb_release['id'], includes=['artists', 'artist-credits', 'labels', 'media'])
+        mb_release = _mb_call(
+            musicbrainzngs.get_release_by_id,
+            mb_release['id'],
+            includes=['artists', 'artist-credits', 'labels', 'media'],
+            _callback=callback
+        )
         if mb_release:
             mb_release = mb_release.get('release')
         else:
@@ -1051,8 +1211,12 @@ def update_tables_after_match(db_path, discogs_id, mb_release=None, mb_release_g
 
     elif not mb_release_group:
         # No group specified - attempt to load it
-        mb_release_details = musicbrainzngs.get_release_by_id(
-            mb_release['id'], includes=["release-groups", 'artists', 'artist-credits'])
+        mb_release_details = _mb_call(
+            musicbrainzngs.get_release_by_id,
+            mb_release['id'],
+            includes=["release-groups", 'artists', 'artist-credits'],
+            _callback=callback
+        )
 
         mb_release = mb_release_details.get('release')
         if mb_release:
@@ -1062,8 +1226,12 @@ def update_tables_after_match(db_path, discogs_id, mb_release=None, mb_release_g
 
     if load_mbid:
         # load the release including the missing sections
-        mb_release_group = musicbrainzngs.get_release_group_by_id(
-            mb_release_group['id'], includes=['releases', 'media'])
+        mb_release_group = _mb_call(
+            musicbrainzngs.get_release_group_by_id,
+            mb_release_group['id'],
+            includes=['releases', 'media'],
+            _callback=callback
+        )
         if mb_release_group:
             mb_release_group = mb_release_group.get('release-group')
         else:
@@ -1190,7 +1358,11 @@ def mb_get_artist(artist, callback=print):
     """
 
     callback(f'searching for artist {artist}')
-    result = musicbrainzngs.search_artists(query=f'artist:"{artist}"')
+    result = _mb_call(
+        musicbrainzngs.search_artists,
+        query=f'artist:"{artist}"',
+        _callback=callback
+    )
 
     if result is None:
         return None
@@ -1227,7 +1399,11 @@ def get_artist_mbid(discogs_id):
         return None
 
     try:
-        mb_url = musicbrainzngs.browse_urls(discogs_url, includes=["artist-rels"])
+        mb_url = _mb_call(
+            musicbrainzngs.browse_urls,
+            discogs_url,
+            includes=["artist-rels"]
+        )
 
     except musicbrainzngs.musicbrainz.ResponseError:
         # TODO: Raise appropriate exception. (URL doesn't exist.)
@@ -1304,8 +1480,11 @@ def mb_summarise_release_group(mb_release_group=None, mb_id=None):
         raise Exception("Unable to load MusicBrainz release group")
 
     if load_mbid:
-        mb_release_group = musicbrainzngs.get_release_group_by_id(
-            load_mbid, includes=['releases', 'artists', 'artist-credits'])
+        mb_release_group = _mb_call(
+            musicbrainzngs.get_release_group_by_id,
+            load_mbid,
+            includes=['releases', 'artists', 'artist-credits']
+        )
         if mb_release_group:
             mb_release_group = mb_release_group.get('release-group')
         else:
@@ -1416,8 +1595,13 @@ def mb_find_release(artist='', title='', discogs_id=0, catno=None, primary_type=
     try:
         while len(all_results) < max_results:
             # Fetch results with pagination
-            result = musicbrainzngs.search_releases(
-                query=query_string, limit=batch_size, offset=offset)
+            result = _mb_call(
+                musicbrainzngs.search_releases,
+                query=query_string,
+                limit=batch_size,
+                offset=offset,
+                _callback=callback
+            )
 
             # Add new results
             releases = result.get('release-list', [])
@@ -1473,8 +1657,11 @@ def mb_get_format(mb_release=None, mbid=None):
         raise Exception("Unable to load MusicBrainz release")
 
     if load_mbid:
-        mb_release = musicbrainzngs.get_release_by_id(
-            load_mbid, includes=['artists', 'artist-credits', 'labels', 'media'])
+        mb_release = _mb_call(
+            musicbrainzngs.get_release_by_id,
+            load_mbid,
+            includes=['artists', 'artist-credits', 'labels', 'media']
+        )
         if mb_release:
             mb_release = mb_release.get('release')
         else:
