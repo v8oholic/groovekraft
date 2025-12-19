@@ -43,6 +43,8 @@ def connect_to_discogs(db_path):
                 token=oauth_token,
                 secret=oauth_token_secret
             )
+            # Use the largest page size the API allows to minimise paginated requests
+            client.per_page = 100
             # Attempt to validate the token immediately
             client.identity()
             access_token = oauth_token
@@ -59,6 +61,7 @@ def connect_to_discogs(db_path):
 
         # instantiate discogs_client object
         client = discogs_client.Client(user_agent=GROOVEKRAFT_USER_AGENT)
+        client.per_page = 100
 
         # prepare the client with our API consumer data
         client.set_consumer_key(DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET)
@@ -174,6 +177,7 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
     os.makedirs(images_folder, exist_ok=True)
     discogs_user = discogs_client.identity()
     releases = discogs_user.collection_folders[0].releases
+    release_cache = {}
 
     if not releases:
         callback("No releases found in the Discogs collection.")
@@ -198,7 +202,10 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
         progress_callback(percent)
 
         try:
-            release = discogs_client.release(release_summary.id)
+            release = release_cache.get(release_summary.id)
+            if release is None:
+                release = discogs_client.release(release_summary.id)
+                release_cache[release_summary.id] = release
         except json.decoder.JSONDecodeError as e:
             callback(f"❌ JSON error fetching release {release_summary.id}: {e}")
             failed += 1
@@ -222,7 +229,12 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
         barcodes = normalize_barcodes(release.fetch('identifiers'))
         catnos = normalize_catnos(release.labels)
         year = release.year or None
-        master_id = release.master.id if release.master else 0
+        # Prefer the master_id already present on the release payload to avoid extra network calls
+        master_id = getattr(release, "_resource_data", {}).get("master_id")
+        if master_id is None:
+            # Fallback in rare cases where master_id is absent from payload
+            master_id = release.master.id if getattr(release, "master", None) else 0
+        master_id = master_id or 0
 
         row = fetch_row(db_path, release.id)
         release_date = earliest_date(row.release_date if row else None, release_date)
@@ -272,8 +284,8 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
                     break
             if not primary_image_url:
                 primary_image_url = release.images[0]['uri']
-                callback(
-                    f"⚠️ No primary image marked for release {release.id}, using first available image.")
+                # callback(
+                #     f"⚠️ No primary image marked for release {release.id}, using first available image.")
 
         existing_uri = getattr(row, 'primary_image_uri', None) if row else None
 
