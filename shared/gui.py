@@ -249,6 +249,19 @@ class CollectionViewer(QMainWindow):
         if getattr(self, "populate_on_this_day_table_fn", None):
             self.populate_on_this_day_table_fn()
 
+    @staticmethod
+    def storage_format_case_sql(alias="d"):
+        normalized = f"LOWER(REPLACE(REPLACE({alias}.format, '”', '\"'), '“', '\"'))"
+        return (
+            "CASE "
+            f"WHEN {normalized} LIKE '%cd%' THEN 'Compact Disc' "
+            f"WHEN {normalized} LIKE '%box set%' AND {normalized} LIKE '%vinyl%' THEN '12\" vinyl' "
+            f"WHEN {normalized} LIKE '%box set%' THEN 'Compact Disc' "
+            f"WHEN {normalized} LIKE '%vinyl%' AND ({normalized} LIKE '%7\"%' OR {normalized} LIKE '%7 inch%') THEN '7\" vinyl' "
+            f"WHEN {normalized} LIKE '%vinyl%' THEN '12\" vinyl' "
+            "ELSE NULL END"
+        )
+
     class DiscogsImportWorker(QObject):
         progress_msg = pyqtSignal(str)
         finished = pyqtSignal()
@@ -671,8 +684,12 @@ class CollectionViewer(QMainWindow):
 
         # Format Filter
         filter_layout.addWidget(QLabel("Format:"))
-        format_input = QLineEdit()
-        filter_layout.addWidget(format_input)
+        storage_format_combo = QComboBox()
+        storage_format_combo.addItem("All", None)
+        storage_format_combo.addItem('12" Vinyl', '12" vinyl')
+        storage_format_combo.addItem('7" Vinyl', '7" vinyl')
+        storage_format_combo.addItem("Compact Disc", "Compact Disc")
+        filter_layout.addWidget(storage_format_combo)
 
         # Year From Filter
         filter_layout.addWidget(QLabel("Year from:"))
@@ -705,10 +722,11 @@ class CollectionViewer(QMainWindow):
 
         def populate_table():
             nonlocal resize_done, last_filter_values
+            storage_format_case = self.storage_format_case_sql("d")
             current_filters = {
                 "artist": artist_input.text(),
                 "title": title_input.text(),
-                "format": format_input.text(),
+                "storage_format": storage_format_combo.currentData(),
                 "year_from": year_from_input.text(),
                 "year_to": year_to_input.text()
             }
@@ -734,9 +752,9 @@ class CollectionViewer(QMainWindow):
                 if title_input.text():
                     filters.append('d.title LIKE ?')
                     params.append(f"%{title_input.text()}%")
-                if format_input.text():
-                    filters.append('d.format LIKE ?')
-                    params.append(f"%{format_input.text()}%")
+                if storage_format_combo.currentData():
+                    filters.append(f"{storage_format_case} = ?")
+                    params.append(storage_format_combo.currentData())
                 if year_from_input.text():
                     filters.append('substr(d.release_date, 1, 4) >= ?')
                     params.append(year_from_input.text())
@@ -916,7 +934,7 @@ class CollectionViewer(QMainWindow):
         # Connect filter changes to start the debounce timer instead of calling populate_table directly
         artist_input.textChanged.connect(lambda: filter_timer.start())
         title_input.textChanged.connect(lambda: filter_timer.start())
-        format_input.textChanged.connect(lambda: filter_timer.start())
+        storage_format_combo.currentIndexChanged.connect(lambda: filter_timer.start())
         year_from_input.textChanged.connect(lambda: filter_timer.start())
         year_to_input.textChanged.connect(lambda: filter_timer.start())
 
@@ -924,7 +942,7 @@ class CollectionViewer(QMainWindow):
             nonlocal last_filter_values
             artist_input.clear()
             title_input.clear()
-            format_input.clear()
+            storage_format_combo.setCurrentIndex(0)
             year_from_input.clear()
             year_to_input.clear()
             last_filter_values = None  # Force repopulation
@@ -963,8 +981,12 @@ class CollectionViewer(QMainWindow):
         r_filter_layout.addWidget(r_title_input)
 
         r_filter_layout.addWidget(QLabel("Format:"))
-        r_format_input = QLineEdit()
-        r_filter_layout.addWidget(r_format_input)
+        r_storage_format_combo = QComboBox()
+        r_storage_format_combo.addItem("All", None)
+        r_storage_format_combo.addItem('12" Vinyl', '12" vinyl')
+        r_storage_format_combo.addItem('7" Vinyl', '7" vinyl')
+        r_storage_format_combo.addItem("Compact Disc", "Compact Disc")
+        r_filter_layout.addWidget(r_storage_format_combo)
 
         r_filter_layout.addWidget(QLabel("Year from:"))
         r_year_from_input = QLineEdit()
@@ -1017,6 +1039,8 @@ class CollectionViewer(QMainWindow):
         random_button_layout.addStretch()
         main_layout.addLayout(random_button_layout)
 
+        storage_format_case = self.storage_format_case_sql("d")
+
         def load_random_item():
             # Build filter fragments and params identical to Collection tab
             where_clauses = []
@@ -1027,9 +1051,9 @@ class CollectionViewer(QMainWindow):
             if r_title_input.text():
                 where_clauses.append('d.title LIKE ?')
                 params.append(f"%{r_title_input.text()}%")
-            if r_format_input.text():
-                where_clauses.append('d.format LIKE ?')
-                params.append(f"%{r_format_input.text()}%")
+            if r_storage_format_combo.currentData():
+                where_clauses.append(f"{storage_format_case} = ?")
+                params.append(r_storage_format_combo.currentData())
             if r_year_from_input.text():
                 where_clauses.append('substr(d.release_date, 1, 4) >= ?')
                 params.append(r_year_from_input.text())
@@ -1123,13 +1147,14 @@ class CollectionViewer(QMainWindow):
         r_filter_timer.setSingleShot(True)
         r_filter_timer.setInterval(400)
         r_filter_timer.timeout.connect(load_random_item)
-        for w in (r_artist_input, r_title_input, r_format_input, r_year_from_input, r_year_to_input):
+        for w in (r_artist_input, r_title_input, r_year_from_input, r_year_to_input):
             w.textChanged.connect(lambda: r_filter_timer.start())
+        r_storage_format_combo.currentIndexChanged.connect(lambda: r_filter_timer.start())
 
         def r_clear_filters():
             r_artist_input.clear()
             r_title_input.clear()
-            r_format_input.clear()
+            r_storage_format_combo.setCurrentIndex(0)
             r_year_from_input.clear()
             r_year_to_input.clear()
             # Trigger debounced refresh explicitly
