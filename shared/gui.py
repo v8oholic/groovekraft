@@ -1,13 +1,14 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QDialogButtonBox
 from shared.utils import is_today_anniversary, is_month_anniversary, parse_and_humanize_date, humanize_date_delta
-from shared.db import context_manager
+from shared.db import context_manager, increment_play_stats
 import musicbrainz.db_musicbrainz as db_musicbrainz
 from shared.config import AppConfig, GROOVEKRAFT_USER_AGENT, GROOVEKRAFT_VERSION
 from musicbrainz import mb_matcher, mb_auth_gui
 from discogs import discogs_importer
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem,
-    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar, QDialog, QCheckBox
+    QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar, QDialog, QCheckBox, QStackedWidget,
+    QAbstractItemView
 )
 from PyQt6.QtGui import QKeySequence, QShortcut, QIcon
 from PyQt6.QtCore import Qt
@@ -61,9 +62,13 @@ DEBUG_MODE = is_debugging()
 
 
 class ReleaseDetailWidget(QWidget):
+    play_now_clicked = pyqtSignal(int)
+    edit_date_clicked = pyqtSignal(int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.labels = {}
+        self.current_discogs_id = None
 
         outer_layout = QVBoxLayout(self)
         outer_layout.setContentsMargins(10, 10, 10, 10)
@@ -76,7 +81,7 @@ class ReleaseDetailWidget(QWidget):
         outer_layout.addWidget(group)
 
         for field in ['Artist', 'Title', 'Format', 'Country', 'Release Date',
-                      'Discogs Id', 'Catalog Numbers', 'Barcodes', 'Matched']:
+                      'Discogs Id', 'Catalog Numbers', 'Barcodes', 'Matched', 'Play Count', 'Last Played']:
             label_widget = QLabel(f"{field}:")
             font = label_widget.font()
             font.setBold(True)
@@ -88,12 +93,46 @@ class ReleaseDetailWidget(QWidget):
             self.labels[field] = value_label
             form.addRow(label_widget, value_label)
 
+        button_layout = QHBoxLayout()
+        self.play_button = QPushButton("Playing now")
+        self.play_button.clicked.connect(self._emit_play_now)
+        button_layout.addWidget(self.play_button)
+        self.edit_date_button = QPushButton("Edit release date")
+        self.edit_date_button.clicked.connect(self._emit_edit_date)
+        button_layout.addWidget(self.edit_date_button)
+        button_layout.addStretch()
+        outer_layout.addLayout(button_layout)
+
+    def _emit_play_now(self):
+        if self.current_discogs_id is not None:
+            self.play_now_clicked.emit(int(self.current_discogs_id))
+
+    def _emit_edit_date(self):
+        if self.current_discogs_id is not None:
+            self.edit_date_clicked.emit(int(self.current_discogs_id))
+
     def update_data(self, data: dict):
+        for key in self.labels:
+            self.labels[key].setText("")
+
+        self.current_discogs_id = data.get('Discogs Id')
+
         for key, value in data.items():
+            if key not in self.labels:
+                continue
             if key == 'Matched':
                 self.labels[key].setText("Yes" if value else "No")
+            elif key == 'Play Count':
+                self.labels[key].setText(str(value) if value is not None else "0")
+            elif key == 'Last Played':
+                self.labels[key].setText(value if value else "Never")
+            elif key == 'Release Date Tooltip':
+                self.labels['Release Date'].setToolTip(value)
             else:
-                self.labels[key].setText(str(value))
+                self.labels[key].setText(str(value) if value is not None else "")
+
+        self.play_button.setEnabled(self.current_discogs_id is not None)
+        self.edit_date_button.setEnabled(self.current_discogs_id is not None)
 
 
 # --- ReleaseDateEditDialog for editing release date in Collection tab ---
@@ -249,6 +288,145 @@ class CollectionViewer(QMainWindow):
         if getattr(self, "populate_on_this_day_table_fn", None):
             self.populate_on_this_day_table_fn()
 
+    def set_escape_handler(self, handler):
+        try:
+            self.esc_shortcut.activated.disconnect()
+        except Exception:
+            pass
+        self.esc_shortcut.activated.connect(handler)
+
+    def reset_escape_handler(self):
+        self.set_escape_handler(self.close)
+
+    @staticmethod
+    def apply_detail_table_affordances(table):
+        table.setToolTip("Click a row to view details")
+        table.viewport().setToolTip("Click a row to view details")
+        table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setStyleSheet(
+            "QTableWidget::item:selected { background: #dbe9ff; color: #000; }"
+        )
+
+    def build_detail_page(self, back_callback):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+
+        back_btn = QPushButton("◀ Back to list")
+        back_btn.clicked.connect(back_callback)
+        layout.addWidget(back_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        body_layout = QHBoxLayout()
+        image_label = QLabel()
+        image_label.setFixedSize(320, 320)
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        body_layout.addWidget(image_label, 1)
+
+        detail_widget = ReleaseDetailWidget()
+        body_layout.addWidget(detail_widget, 2)
+
+        layout.addLayout(body_layout)
+        layout.addStretch()
+
+        return page, detail_widget, image_label
+
+    def get_release_detail(self, discogs_id):
+        with context_manager(self.cfg.db_path) as cur:
+            cur.execute("""
+                SELECT artist, title, format, country, release_date, release_date_locked, discogs_id,
+                       catnos, barcodes, play_count, last_played
+                FROM discogs_releases
+                WHERE discogs_id = ?
+            """, (discogs_id,))
+            release = cur.fetchone()
+
+        if not release:
+            return None
+
+        mb_row = db_musicbrainz.fetch_row(self.cfg.db_path, discogs_id=discogs_id)
+        matched = bool(mb_row and mb_row.mbid)
+
+        release_human = parse_and_humanize_date(release.release_date)
+        locked = bool(getattr(release, "release_date_locked", 0))
+        data = {
+            'Artist': release.artist,
+            'Title': release.title,
+            'Format': release.format,
+            'Country': release.country,
+            'Release Date': f"{release_human} {'🔒' if locked else ''}".strip(),
+            'Release Date Tooltip': "Release date is locked; cannot be changed by import." if locked else "",
+            'Discogs Id': release.discogs_id,
+            'Catalog Numbers': release.catnos,
+            'Barcodes': release.barcodes,
+            'Matched': matched,
+            'Play Count': getattr(release, "play_count", 0) or 0,
+            'Last Played': getattr(release, "last_played", None)
+        }
+
+        image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
+        return data, image_path
+
+    def show_release_detail(self, discogs_id, detail_widget, image_label=None):
+        details = self.get_release_detail(discogs_id)
+        if not details:
+            return
+
+        data, image_path = details
+        detail_widget.update_data(data)
+
+        if image_label is not None:
+            if os.path.exists(image_path):
+                from PyQt6.QtGui import QPixmap
+                pixmap = QPixmap(image_path)
+                pixmap = pixmap.scaled(image_label.width() or 320, image_label.height() or 320,
+                                       Qt.AspectRatioMode.KeepAspectRatio,
+                                       Qt.TransformationMode.SmoothTransformation)
+                image_label.setPixmap(pixmap)
+            else:
+                image_label.clear()
+
+    def handle_play_now(self, discogs_id, detail_widget, image_label=None):
+        if discogs_id is None:
+            return
+        increment_play_stats(self.cfg.db_path, discogs_id)
+        self.show_release_detail(discogs_id, detail_widget, image_label)
+
+    def edit_release_date(self, discogs_id, after_update=None, refresh_tables=False):
+        if discogs_id is None:
+            return
+        with context_manager(self.cfg.db_path) as cur:
+            cur.execute(
+                "SELECT release_date, release_date_locked FROM discogs_releases WHERE discogs_id = ?",
+                (discogs_id,))
+            row_db = cur.fetchone()
+            if row_db:
+                initial_date = row_db.release_date if hasattr(
+                    row_db, "release_date") else ""
+                locked = bool(row_db.release_date_locked) if hasattr(
+                    row_db, "release_date_locked") and row_db.release_date_locked is not None else False
+            else:
+                initial_date = ""
+                locked = False
+
+        dialog = ReleaseDateEditDialog(initial_date, locked=locked)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_date = dialog.get_date()
+        new_locked = dialog.is_locked()
+        if not new_date:
+            return
+
+        with context_manager(self.cfg.db_path) as cur:
+            cur.execute(
+                "UPDATE discogs_releases SET release_date = ?, release_date_locked = ? WHERE discogs_id = ?",
+                (new_date, int(new_locked), discogs_id)
+            )
+
+        if after_update:
+            after_update(new_date, new_locked)
+        if refresh_tables:
+            self.refresh_views()
+
     @staticmethod
     def storage_format_case_sql(alias="d"):
         normalized = f"LOWER(REPLACE(REPLACE({alias}.format, '”', '\"'), '“', '\"'))"
@@ -329,6 +507,8 @@ class CollectionViewer(QMainWindow):
         def handle_tab_changed(idx):
             if self.tab_widget.tabText(idx) == "On this day" and self.populate_on_this_day_table_fn:
                 self.populate_on_this_day_table_fn()
+            # Reset Escape to default when switching tabs to avoid stale handlers
+            self.reset_escape_handler()
         tab_widget.currentChanged.connect(handle_tab_changed)
         self.esc_shortcut = QShortcut(QKeySequence("Escape"), self)
         self.esc_shortcut.activated.connect(self.close)
@@ -336,8 +516,15 @@ class CollectionViewer(QMainWindow):
 
     def create_on_this_day_tab(self):
         widget = QWidget()
-        layout = QVBoxLayout()
-        widget.setLayout(layout)
+        main_layout = QVBoxLayout()
+        widget.setLayout(main_layout)
+
+        stack = QStackedWidget()
+        main_layout.addWidget(stack)
+
+        list_page = QWidget()
+        layout = QVBoxLayout(list_page)
+        stack.addWidget(list_page)
 
         # --- Date header with navigation ---
         from PyQt6.QtCore import QDate
@@ -503,6 +690,34 @@ class CollectionViewer(QMainWindow):
         table = QTableWidget()
         layout.addWidget(table)
         self.on_this_day_table = table
+        self.apply_detail_table_affordances(table)
+
+        def back_to_list():
+            stack.setCurrentWidget(list_page)
+            self.reset_escape_handler()
+
+        detail_page, self.on_this_day_detail_widget, self.on_this_day_image_label = self.build_detail_page(back_to_list)
+        self.on_this_day_detail_widget.play_now_clicked.connect(
+            lambda discogs_id: self.handle_play_now(discogs_id, self.on_this_day_detail_widget, self.on_this_day_image_label))
+        self.on_this_day_detail_widget.edit_date_clicked.connect(
+            lambda discogs_id: self.edit_release_date(
+                discogs_id,
+                after_update=lambda *_: self.show_release_detail(discogs_id, self.on_this_day_detail_widget, self.on_this_day_image_label),
+                refresh_tables=True
+            ))
+        stack.addWidget(detail_page)
+
+        def open_detail_view(row_idx, _column):
+            discogs_id_item = table.item(row_idx, 3)
+            if discogs_id_item:
+                discogs_id = int(discogs_id_item.text())
+                self.show_release_detail(discogs_id, self.on_this_day_detail_widget, self.on_this_day_image_label)
+                stack.setCurrentWidget(detail_page)
+                self.set_escape_handler(back_to_list)
+
+        # Single/double click -> open detail view
+        table.cellClicked.connect(open_detail_view)
+        table.cellDoubleClicked.connect(open_detail_view)
 
         # The logic for populating the table
         def populate_on_this_day_table():
@@ -622,6 +837,8 @@ class CollectionViewer(QMainWindow):
 
             table.resizeColumnsToContents()
 
+        table.cellDoubleClicked.connect(open_detail_view)
+
         # Navigation handlers: move selected month/day (no year) and repopulate
         def goto_prev_day():
             nonlocal current_month, current_day
@@ -668,9 +885,16 @@ class CollectionViewer(QMainWindow):
         widget = QWidget()
         main_layout = QVBoxLayout(widget)
 
+        stack = QStackedWidget()
+        main_layout.addWidget(stack)
+
+        list_page = QWidget()
+        list_layout = QVBoxLayout(list_page)
+        stack.addWidget(list_page)
+
         # Filter row
         filter_layout = QHBoxLayout()
-        main_layout.addLayout(filter_layout)
+        list_layout.addLayout(filter_layout)
 
         # Artist Filter
         filter_layout.addWidget(QLabel("Artist:"))
@@ -708,8 +932,24 @@ class CollectionViewer(QMainWindow):
 
         # Table
         table = QTableWidget()
-        main_layout.addWidget(table)
+        list_layout.addWidget(table)
         self.collection_table = table
+        self.apply_detail_table_affordances(table)
+
+        def back_to_list():
+            stack.setCurrentWidget(list_page)
+            self.reset_escape_handler()
+
+        detail_page, self.collection_detail_widget, self.collection_image_label = self.build_detail_page(back_to_list)
+        self.collection_detail_widget.play_now_clicked.connect(
+            lambda discogs_id: self.handle_play_now(discogs_id, self.collection_detail_widget, self.collection_image_label))
+        self.collection_detail_widget.edit_date_clicked.connect(
+            lambda discogs_id: self.edit_release_date(
+                discogs_id,
+                after_update=lambda *_: self.show_release_detail(discogs_id, self.collection_detail_widget, self.collection_image_label),
+                refresh_tables=True
+            ))
+        stack.addWidget(detail_page)
 
         from PyQt6.QtCore import QTimer
         # Debounce filter changes using a single-shot QTimer
@@ -836,13 +1076,13 @@ class CollectionViewer(QMainWindow):
             table.setUpdatesEnabled(True)
             table.repaint()
 
-            # Ensure double-click handler is not connected multiple times
-            try:
-                table.cellDoubleClicked.disconnect()
-            except TypeError:
-                pass
-            # Hook up double-click for editing release date
-            table.cellDoubleClicked.connect(lambda row, col: on_table_double_click(row, col, table))
+            # Ensure click handlers are not connected multiple times
+            for signal in (table.cellClicked, table.cellDoubleClicked):
+                try:
+                    signal.disconnect()
+                except TypeError:
+                    pass
+                signal.connect(lambda row, col, tbl=table: on_table_double_click(row, col, tbl))
 
             # Call lazy thumbnail loader after populating table
             load_visible_thumbnails()
@@ -887,49 +1127,15 @@ class CollectionViewer(QMainWindow):
             scrollbar = table.verticalScrollBar()
             scrollbar.valueChanged.connect(load_visible_thumbnails)
 
-        # Define double-click handler for release date edit
+        # Define double-click handler for detail view
         def on_table_double_click(row, column, table):
-            if column == 2:  # Release Date column
-                discogs_id_item = table.item(row, 3)
-                if discogs_id_item:
-                    discogs_id = int(discogs_id_item.text())
-                    with context_manager(self.cfg.db_path) as cur:
-                        cur.execute(
-                            "SELECT release_date, release_date_locked FROM discogs_releases WHERE discogs_id = ?",
-                            (discogs_id,))
-                        row_db = cur.fetchone()
-                        if row_db:
-                            initial_date = row_db.release_date if hasattr(
-                                row_db, "release_date") else ""
-                            locked = bool(row_db.release_date_locked) if hasattr(
-                                row_db, "release_date_locked") and row_db.release_date_locked is not None else False
-                        else:
-                            initial_date = ""
-                            locked = False
-                    dialog = ReleaseDateEditDialog(initial_date, locked=locked)
-                    if dialog.exec() == QDialog.DialogCode.Accepted:
-                        new_date = dialog.get_date()
-                        new_locked = dialog.is_locked()
-                        if new_date:
-                            with context_manager(self.cfg.db_path) as cur:
-                                cur.execute(
-                                    "UPDATE discogs_releases SET release_date = ?, release_date_locked = ? WHERE discogs_id = ?",
-                                    (new_date, int(new_locked), discogs_id)
-                                )
-                            # Update table visually
-                            label = table.cellWidget(row, column)
-                            if label:
-                                release_human = parse_and_humanize_date(new_date)
-                                release_delta = humanize_date_delta(new_date)
-                                if new_locked:
-                                    release_text = f"<b>{release_human} 🔒</b><br>{release_delta}"
-                                    label.setText(release_text)
-                                    label.setToolTip(
-                                        "Release date is locked; cannot be changed by import.")
-                                else:
-                                    release_text = f"<b>{release_human}</b><br>{release_delta}"
-                                    label.setText(release_text)
-                                    label.setToolTip("")
+            discogs_id_item = table.item(row, 3)
+            if not discogs_id_item:
+                return
+            discogs_id = int(discogs_id_item.text())
+            self.show_release_detail(discogs_id, self.collection_detail_widget, self.collection_image_label)
+            stack.setCurrentWidget(detail_page)
+            self.set_escape_handler(back_to_list)
 
         # Connect filter changes to start the debounce timer instead of calling populate_table directly
         artist_input.textChanged.connect(lambda: filter_timer.start())
@@ -1007,18 +1213,26 @@ class CollectionViewer(QMainWindow):
         # Left side (Image only)
         left_layout = QVBoxLayout()
 
-        self.image_label = QLabel()
-        self.image_label.setFixedSize(400, 400)
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        left_layout.addWidget(self.image_label)
+        self.random_image_label = QLabel()
+        self.random_image_label.setFixedSize(400, 400)
+        self.random_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        left_layout.addWidget(self.random_image_label)
 
         layout.addLayout(left_layout)
 
         # Right side (Details only)
         right_layout = QVBoxLayout()
 
-        self.detail_widget = ReleaseDetailWidget()
-        right_layout.addWidget(self.detail_widget)
+        self.random_detail_widget = ReleaseDetailWidget()
+        self.random_detail_widget.play_now_clicked.connect(
+            lambda discogs_id: self.handle_play_now(discogs_id, self.random_detail_widget, self.random_image_label))
+        self.random_detail_widget.edit_date_clicked.connect(
+            lambda discogs_id: self.edit_release_date(
+                discogs_id,
+                after_update=lambda *_: self.show_release_detail(discogs_id, self.random_detail_widget, self.random_image_label),
+                refresh_tables=True
+            ))
+        right_layout.addWidget(self.random_detail_widget)
 
         # random_button will be moved outside right_layout
         random_button = QPushButton("🎲 Randomise")
@@ -1081,21 +1295,21 @@ class CollectionViewer(QMainWindow):
 
                 # Show/hide content areas based on count
                 if total == 0:
-                    self.image_label.setVisible(False)
-                    self.detail_widget.setVisible(False)
+                    self.random_image_label.setVisible(False)
+                    self.random_detail_widget.setVisible(False)
                 else:
-                    self.image_label.setVisible(True)
-                    self.detail_widget.setVisible(True)
+                    self.random_image_label.setVisible(True)
+                    self.random_detail_widget.setVisible(True)
 
                 if total == 0:
                     # Clear UI when nothing matches
-                    self.image_label.clear()
-                    self.detail_widget.update_data({
+                    self.random_image_label.clear()
+                    self.random_detail_widget.update_data({
                         'Artist': '', 'Title': 'No matching release', 'Format': '', 'Country': '',
                         'Release Date': '', 'Discogs Id': '', 'Catalog Numbers': '', 'Barcodes': '', 'Matched': ''
                     })
-                    self.image_label.setVisible(False)
-                    self.detail_widget.setVisible(False)
+                    self.random_image_label.setVisible(False)
+                    self.random_detail_widget.setVisible(False)
                     return
 
                 # Then fetch a single random row that matches the filters
@@ -1111,34 +1325,8 @@ class CollectionViewer(QMainWindow):
                 row = cur.fetchone()
 
                 if row:
-                    # Format release date to be more user-friendly
-                    release_human = parse_and_humanize_date(row.release_date)
-                    release_delta = humanize_date_delta(row.release_date)
-                    data = {
-                        'Artist': row.artist,
-                        'Title': row.title,
-                        'Format': row.format,
-                        'Country': row.country,
-                        'Release Date': f"{release_human}",
-                        'Discogs Id': row.discogs_id,
-                        'Catalog Numbers': row.catnos,
-                        'Barcodes': row.barcodes,
-                        'Matched': 'Yes' if row.mbid else 'No'
-                    }
-                    self.detail_widget.update_data(data)
-
-                    # Load image for the chosen discogs_id
                     discogs_id = row.discogs_id
-                    image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
-                    if os.path.exists(image_path):
-                        from PyQt6.QtGui import QPixmap
-                        pixmap = QPixmap(image_path)
-                        pixmap = pixmap.scaled(self.image_label.width(), self.image_label.height(),
-                                               Qt.AspectRatioMode.KeepAspectRatio,
-                                               Qt.TransformationMode.SmoothTransformation)
-                        self.image_label.setPixmap(pixmap)
-                    else:
-                        self.image_label.clear()
+                    self.show_release_detail(discogs_id, self.random_detail_widget, self.random_image_label)
 
         random_button.clicked.connect(load_random_item)
 
