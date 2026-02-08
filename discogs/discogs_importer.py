@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import os
+import random
 import requests
+import time
 # Discogs API logic
 import discogs_client
 from discogs_client.exceptions import HTTPError
@@ -192,6 +194,99 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
     total_releases = len(releases)
 
     imported_ids = set()
+    failed_ids = set()
+
+    def _status_code_from_http_error(err):
+        return (
+            getattr(err, "status_code", None)
+            or getattr(getattr(err, "response", None), "status_code", None)
+        )
+
+    def _fetch_release_data(release_id, max_attempts=4, base_delay=1.0):
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                release = release_cache.get(release_id)
+                if release is None or attempt > 1:
+                    release = discogs_client.release(release_id)
+
+                # Force a fetch so we surface HTTP errors early
+                _ = release.title
+                _ = release.artists
+                _ = release.formats
+                _ = release.labels
+                _ = release.year
+                _ = release.country
+
+                release_date = release.fetch('released') or None
+                if isinstance(release_date, str) and release_date.endswith('-00'):
+                    release_date = release_date[:len(release_date) - 3]
+
+                artist = normalize_artist(release.artists[0].name)
+                title = normalize_title(release.title)
+                format = normalize_format(release.formats[0])
+                country = normalize_country(release.country)
+                barcodes = normalize_barcodes(release.fetch('identifiers'))
+                catnos = normalize_catnos(release.labels)
+                year = release.year or None
+
+                # Prefer the master_id already present on the release payload to avoid extra network calls
+                master_id = getattr(release, "_resource_data", {}).get("master_id")
+                if master_id is None:
+                    # Fallback in rare cases where master_id is absent from payload
+                    master_id = release.master.id if getattr(release, "master", None) else 0
+                master_id = master_id or 0
+
+                primary_image_url = None
+                if hasattr(release, 'images') and release.images:
+                    for img in release.images:
+                        if img.get('type', '').lower() == 'primary':
+                            primary_image_url = img['uri']
+                            break
+                    if not primary_image_url:
+                        primary_image_url = release.images[0]['uri']
+
+                release_cache[release_id] = release
+                return {
+                    "release": release,
+                    "release_date": release_date,
+                    "artist": artist,
+                    "title": title,
+                    "format": format,
+                    "country": country,
+                    "barcodes": barcodes,
+                    "catnos": catnos,
+                    "year": year,
+                    "master_id": master_id,
+                    "primary_image_url": primary_image_url,
+                }
+
+            except (HTTPError, json.decoder.JSONDecodeError, requests.RequestException) as e:
+                last_error = e
+                release_cache.pop(release_id, None)
+                status_code = _status_code_from_http_error(e) if isinstance(e, HTTPError) else None
+                is_404 = status_code == 404 or "404" in str(e)
+                if attempt < max_attempts:
+                    delay = base_delay * (2 ** (attempt - 1))
+                    delay += random.uniform(0.0, 0.25)
+                    callback(
+                        f"⚠️ Temporary error fetching release {release_id} (attempt {attempt}/{max_attempts}): {e}. Retrying in {delay:.1f}s")
+                    time.sleep(delay)
+                    continue
+                if is_404:
+                    callback(f"❌ Release {release_id} returned 404 after {max_attempts} attempts; skipping for now.")
+                else:
+                    callback(f"❌ Error fetching release {release_id} after {max_attempts} attempts: {e}")
+                return None
+            except Exception as e:
+                last_error = e
+                release_cache.pop(release_id, None)
+                callback(f"❌ Error fetching release {release_id}: {e}")
+                return None
+
+        if last_error:
+            callback(f"❌ Error fetching release {release_id}: {last_error}")
+        return None
 
     for index, release_summary in enumerate(releases, start=1):
         if should_cancel():
@@ -201,40 +296,25 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
         percent = int((index / total_releases) * 100)
         progress_callback(percent)
 
-        try:
-            release = release_cache.get(release_summary.id)
-            if release is None:
-                release = discogs_client.release(release_summary.id)
-                release_cache[release_summary.id] = release
-        except json.decoder.JSONDecodeError as e:
-            callback(f"❌ JSON error fetching release {release_summary.id}: {e}")
+        data = _fetch_release_data(release_summary.id)
+        if not data:
             failed += 1
-            continue
-        except Exception as e:
-            callback(f"❌ Error fetching release {release_summary.id}: {e}")
-            failed += 1
+            failed_ids.add(release_summary.id)
             continue
 
-        release_date = release.fetch('released') or None
-
-        if isinstance(release_date, str) and release_date.endswith('-00'):
-            release_date = release_date[:len(release_date)-3]
+        release = data["release"]
+        release_date = data["release_date"]
 
         callback(f'⚙️ {index}/{total_releases} {discogs_summarise_release(release=release)}')
 
-        artist = normalize_artist(release.artists[0].name)
-        title = normalize_title(release.title)
-        format = normalize_format(release.formats[0])
-        country = normalize_country(release.country)
-        barcodes = normalize_barcodes(release.fetch('identifiers'))
-        catnos = normalize_catnos(release.labels)
-        year = release.year or None
-        # Prefer the master_id already present on the release payload to avoid extra network calls
-        master_id = getattr(release, "_resource_data", {}).get("master_id")
-        if master_id is None:
-            # Fallback in rare cases where master_id is absent from payload
-            master_id = release.master.id if getattr(release, "master", None) else 0
-        master_id = master_id or 0
+        artist = data["artist"]
+        title = data["title"]
+        format = data["format"]
+        country = data["country"]
+        barcodes = data["barcodes"]
+        catnos = data["catnos"]
+        year = data["year"]
+        master_id = data["master_id"]
 
         row = fetch_row(db_path, release.id)
         release_date = earliest_date(row.release_date if row else None, release_date)
@@ -276,16 +356,7 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
 
         imported_ids.add(release.id)
 
-        primary_image_url = None
-        if hasattr(release, 'images') and release.images:
-            for img in release.images:
-                if img.get('type', '').lower() == 'primary':
-                    primary_image_url = img['uri']
-                    break
-            if not primary_image_url:
-                primary_image_url = release.images[0]['uri']
-                # callback(
-                #     f"⚠️ No primary image marked for release {release.id}, using first available image.")
+        primary_image_url = data["primary_image_url"]
 
         existing_uri = getattr(row, 'primary_image_uri', None) if row else None
 
@@ -312,7 +383,10 @@ def import_from_discogs(discogs_client, cfg: AppConfig, callback=print, should_c
 
     # Identify orphans and possible replacements
     all_db_ids = get_all_discogs_ids(db_path)
-    orphans = set(all_db_ids) - imported_ids
+    orphans = set(all_db_ids) - imported_ids - failed_ids
+
+    if failed_ids:
+        callback(f"⚠️ {len(failed_ids)} releases failed to fetch and were excluded from orphan cleanup.")
 
     if orphans:
         callback(f"Found {len(orphans)} orphaned releases in database not in latest import.")
