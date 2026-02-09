@@ -7,7 +7,8 @@
 #
 # ./groovekraft.sh --publish
 #
-# This will create (or update) a symlink at ~/bin/groovekraft pointing to this script.
+# This will create (or update) a symlink at ~/bin/groovekraft pointing to this script,
+# and install the app bundle into ~/Applications so Spotlight can find it.
 #
 # Make sure ~/bin is in your PATH by adding this to your ~/.zshrc if needed:
 # export PATH="$HOME/bin:$PATH"
@@ -48,6 +49,20 @@ if [[ "$1" == "--publish" ]]; then
   ln -sf "$SCRIPT_PATH" ~/bin/groovekraft
   echo "Symlink created: ~/bin/groovekraft -> $SCRIPT_PATH"
   echo
+
+  # Install the app bundle so it is available as an application (Spotlight indexed)
+  APP_BUNDLE_SRC="$APP_DIR/dist/GrooveKraft.app"
+  APP_BUNDLE_DEST="$HOME/Applications/GrooveKraft.app"
+  if [ -d "$APP_BUNDLE_SRC" ]; then
+    echo "Installing app bundle to ~/Applications..."
+    mkdir -p "$HOME/Applications"
+    rm -rf "$APP_BUNDLE_DEST"
+    cp -R "$APP_BUNDLE_SRC" "$APP_BUNDLE_DEST"
+    echo "App installed: $APP_BUNDLE_DEST"
+  else
+    echo "Warning: App bundle not found at $APP_BUNDLE_SRC"
+    echo "Run ./make_installer.sh first to build GrooveKraft.app"
+  fi
 
   # Check if ~/bin is in PATH
   if [[ ":$PATH:" != *":$HOME/bin:"* ]]; then
