@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QDialogButtonBox
 from shared.utils import is_today_anniversary, is_month_anniversary, parse_and_humanize_date, humanize_date_delta
-from shared.db import context_manager, increment_play_stats
+from shared.db import context_manager, increment_play_stats, set_last_cleaned
 import musicbrainz.db_musicbrainz as db_musicbrainz
 from shared.config import AppConfig, GROOVEKRAFT_USER_AGENT, GROOVEKRAFT_VERSION
 from musicbrainz import mb_matcher, mb_auth_gui
@@ -63,6 +63,7 @@ DEBUG_MODE = is_debugging()
 
 class ReleaseDetailWidget(QWidget):
     play_now_clicked = pyqtSignal(int)
+    clean_clicked = pyqtSignal(int)
     edit_date_clicked = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -81,7 +82,7 @@ class ReleaseDetailWidget(QWidget):
         outer_layout.addWidget(group)
 
         for field in ['Artist', 'Title', 'Format', 'Country', 'Release Date',
-                      'Discogs Id', 'Catalog Numbers', 'Barcodes', 'Matched', 'Play Count', 'Last Played']:
+                      'Discogs Id', 'Catalog Numbers', 'Barcodes', 'Matched', 'Last Cleaned', 'Play Count', 'Last Played']:
             label_widget = QLabel(f"{field}:")
             font = label_widget.font()
             font.setBold(True)
@@ -94,6 +95,9 @@ class ReleaseDetailWidget(QWidget):
             form.addRow(label_widget, value_label)
 
         button_layout = QHBoxLayout()
+        self.clean_button = QPushButton("Clean")
+        self.clean_button.clicked.connect(self._emit_clean)
+        button_layout.addWidget(self.clean_button)
         self.play_button = QPushButton("Playing now")
         self.play_button.clicked.connect(self._emit_play_now)
         button_layout.addWidget(self.play_button)
@@ -106,6 +110,10 @@ class ReleaseDetailWidget(QWidget):
     def _emit_play_now(self):
         if self.current_discogs_id is not None:
             self.play_now_clicked.emit(int(self.current_discogs_id))
+
+    def _emit_clean(self):
+        if self.current_discogs_id is not None:
+            self.clean_clicked.emit(int(self.current_discogs_id))
 
     def _emit_edit_date(self):
         if self.current_discogs_id is not None:
@@ -126,11 +134,14 @@ class ReleaseDetailWidget(QWidget):
                 self.labels[key].setText(str(value) if value is not None else "0")
             elif key == 'Last Played':
                 self.labels[key].setText(value if value else "Never")
+            elif key == 'Last Cleaned':
+                self.labels[key].setText(value if value else "Never")
             elif key == 'Release Date Tooltip':
                 self.labels['Release Date'].setToolTip(value)
             else:
                 self.labels[key].setText(str(value) if value is not None else "")
 
+        self.clean_button.setEnabled(self.current_discogs_id is not None)
         self.play_button.setEnabled(self.current_discogs_id is not None)
         self.edit_date_button.setEnabled(self.current_discogs_id is not None)
 
@@ -334,7 +345,7 @@ class CollectionViewer(QMainWindow):
         with context_manager(self.cfg.db_path) as cur:
             cur.execute("""
                 SELECT artist, title, format, country, release_date, release_date_locked, discogs_id,
-                       catnos, barcodes, play_count, last_played
+                       catnos, barcodes, play_count, last_played, last_cleaned
                 FROM discogs_releases
                 WHERE discogs_id = ?
             """, (discogs_id,))
@@ -359,6 +370,7 @@ class CollectionViewer(QMainWindow):
             'Catalog Numbers': release.catnos,
             'Barcodes': release.barcodes,
             'Matched': matched,
+            'Last Cleaned': getattr(release, "last_cleaned", None),
             'Play Count': getattr(release, "play_count", 0) or 0,
             'Last Played': getattr(release, "last_played", None)
         }
@@ -389,6 +401,12 @@ class CollectionViewer(QMainWindow):
         if discogs_id is None:
             return
         increment_play_stats(self.cfg.db_path, discogs_id)
+        self.show_release_detail(discogs_id, detail_widget, image_label)
+
+    def handle_clean(self, discogs_id, detail_widget, image_label=None):
+        if discogs_id is None:
+            return
+        set_last_cleaned(self.cfg.db_path, discogs_id)
         self.show_release_detail(discogs_id, detail_widget, image_label)
 
     def edit_release_date(self, discogs_id, after_update=None, refresh_tables=False):
@@ -697,6 +715,8 @@ class CollectionViewer(QMainWindow):
             self.reset_escape_handler()
 
         detail_page, self.on_this_day_detail_widget, self.on_this_day_image_label = self.build_detail_page(back_to_list)
+        self.on_this_day_detail_widget.clean_clicked.connect(
+            lambda discogs_id: self.handle_clean(discogs_id, self.on_this_day_detail_widget, self.on_this_day_image_label))
         self.on_this_day_detail_widget.play_now_clicked.connect(
             lambda discogs_id: self.handle_play_now(discogs_id, self.on_this_day_detail_widget, self.on_this_day_image_label))
         self.on_this_day_detail_widget.edit_date_clicked.connect(
@@ -941,6 +961,8 @@ class CollectionViewer(QMainWindow):
             self.reset_escape_handler()
 
         detail_page, self.collection_detail_widget, self.collection_image_label = self.build_detail_page(back_to_list)
+        self.collection_detail_widget.clean_clicked.connect(
+            lambda discogs_id: self.handle_clean(discogs_id, self.collection_detail_widget, self.collection_image_label))
         self.collection_detail_widget.play_now_clicked.connect(
             lambda discogs_id: self.handle_play_now(discogs_id, self.collection_detail_widget, self.collection_image_label))
         self.collection_detail_widget.edit_date_clicked.connect(
@@ -1224,6 +1246,8 @@ class CollectionViewer(QMainWindow):
         right_layout = QVBoxLayout()
 
         self.random_detail_widget = ReleaseDetailWidget()
+        self.random_detail_widget.clean_clicked.connect(
+            lambda discogs_id: self.handle_clean(discogs_id, self.random_detail_widget, self.random_image_label))
         self.random_detail_widget.play_now_clicked.connect(
             lambda discogs_id: self.handle_play_now(discogs_id, self.random_detail_widget, self.random_image_label))
         self.random_detail_widget.edit_date_clicked.connect(

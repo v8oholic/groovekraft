@@ -36,6 +36,7 @@ CREATE_DISCOGS_RELEASES_TABLE = """
         primary_image_uri TEXT,
         play_count INTEGER DEFAULT 0,
         last_played TEXT,
+        last_cleaned TEXT,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         release_date_locked INTEGER DEFAULT 0
     );
@@ -135,6 +136,7 @@ def initialize_db(db_path: str) -> None:
     conn.commit()
     migrate_add_release_date_locked(db_path)
     migrate_add_play_stats(db_path)
+    migrate_add_clean_stats(db_path)
     conn.close()
 
 
@@ -156,6 +158,14 @@ def migrate_add_play_stats(db_path):
             cur.execute("ALTER TABLE discogs_releases ADD COLUMN last_played TEXT;")
 
 
+def migrate_add_clean_stats(db_path):
+    with context_manager(db_path) as cur:
+        cur.execute("PRAGMA table_info(discogs_releases);")
+        columns = [row[1] for row in cur.fetchall()]
+        if "last_cleaned" not in columns:
+            cur.execute("ALTER TABLE discogs_releases ADD COLUMN last_cleaned TEXT;")
+
+
 def increment_play_stats(db_path: str, discogs_id: int):
     """Increment play_count and stamp last_played for a release."""
     with context_manager(db_path) as cur:
@@ -167,6 +177,22 @@ def increment_play_stats(db_path: str, discogs_id: int):
         """, (discogs_id,))
         cur.execute("""
             SELECT play_count, last_played
+            FROM discogs_releases
+            WHERE discogs_id = ?
+        """, (discogs_id,))
+        return cur.fetchone()
+
+
+def set_last_cleaned(db_path: str, discogs_id: int):
+    """Stamp last_cleaned for a release."""
+    with context_manager(db_path) as cur:
+        cur.execute("""
+            UPDATE discogs_releases
+            SET last_cleaned = CURRENT_TIMESTAMP
+            WHERE discogs_id = ?
+        """, (discogs_id,))
+        cur.execute("""
+            SELECT last_cleaned
             FROM discogs_releases
             WHERE discogs_id = ?
         """, (discogs_id,))
