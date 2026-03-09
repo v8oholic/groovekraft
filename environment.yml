@@ -64,10 +64,14 @@ dependencies:
   - wsproto=1.2.0=pyhd8ed1ab_1
   - zstandard=0.23.0=py311h917b07b_1
   - pip:
+      - altgraph==0.17.4
       - charset-normalizer==3.4.1
       - debugpy==1.8.14
+      - macholib==1.16.3
       - oauthlib==3.2.2
       - packaging==24.2
+      - pyinstaller==6.13.0
+      - pyinstaller-hooks-contrib==2025.3
       - pyqt6==6.9.0
       - pyqt6-qt6==6.9.0
       - pyqt6-sip==13.10.0
