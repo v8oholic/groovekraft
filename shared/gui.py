@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QKeySequence, QShortcut, QIcon
 from PyQt6.QtCore import Qt
-from PyQt6.QtCore import QObject, pyqtSignal, QThread
+from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer
 
 
 import os
@@ -293,11 +293,52 @@ class ReleaseDateEditDialog(QDialog):
 
 
 class CollectionViewer(QMainWindow):
-    def refresh_views(self):
-        if getattr(self, "populate_collection_table_fn", None):
-            self.populate_collection_table_fn()
-        if getattr(self, "populate_on_this_day_table_fn", None):
+    WATCHED_REFRESH_TABS = {"On this day", "Collection", "Randomiser"}
+
+    def _get_db_mtime_ns(self):
+        try:
+            stat_result = os.stat(self.cfg.db_path)
+            return getattr(stat_result, "st_mtime_ns", int(stat_result.st_mtime * 1_000_000_000))
+        except OSError:
+            return 0
+
+    def _sync_external_db_changes(self):
+        current_mtime = self._get_db_mtime_ns()
+        if current_mtime > self._db_last_mtime_ns:
+            self._db_last_mtime_ns = current_mtime
+            self._db_change_token += 1
+
+    def mark_database_changed(self):
+        self._db_change_token += 1
+        self._db_last_mtime_ns = self._get_db_mtime_ns()
+
+    def maybe_refresh_watched_tab(self, tab_name):
+        self._sync_external_db_changes()
+        if tab_name not in self.WATCHED_REFRESH_TABS:
+            return
+        if self._tab_refresh_tokens.get(tab_name, -1) == self._db_change_token:
+            return
+
+        if tab_name == "On this day" and self.populate_on_this_day_table_fn:
             self.populate_on_this_day_table_fn()
+            self._tab_refresh_tokens[tab_name] = self._db_change_token
+            return
+
+        if tab_name == "Collection" and self.populate_collection_table_fn:
+            self.populate_collection_table_fn(force=True)
+            self._tab_refresh_tokens[tab_name] = self._db_change_token
+            return
+
+        if tab_name == "Randomiser" and self.populate_randomiser_fn:
+            self.populate_randomiser_fn()
+            self._tab_refresh_tokens[tab_name] = self._db_change_token
+
+    def refresh_views(self):
+        self.mark_database_changed()
+        if not hasattr(self, "tab_widget"):
+            return
+        current_tab_name = self.tab_widget.tabText(self.tab_widget.currentIndex())
+        self.maybe_refresh_watched_tab(current_tab_name)
 
     def set_escape_handler(self, handler):
         try:
@@ -439,11 +480,13 @@ class CollectionViewer(QMainWindow):
                 "UPDATE discogs_releases SET release_date = ?, release_date_locked = ? WHERE discogs_id = ?",
                 (new_date, int(new_locked), discogs_id)
             )
+        self.mark_database_changed()
 
         if after_update:
             after_update(new_date, new_locked)
         if refresh_tables:
-            self.refresh_views()
+            current_tab_name = self.tab_widget.tabText(self.tab_widget.currentIndex())
+            self.maybe_refresh_watched_tab(current_tab_name)
 
     @staticmethod
     def storage_format_case_sql(alias="d"):
@@ -503,6 +546,10 @@ class CollectionViewer(QMainWindow):
         self.on_this_day_table = None
         self.populate_collection_table_fn = None
         self.populate_on_this_day_table_fn = None
+        self.populate_randomiser_fn = None
+        self._db_change_token = 0
+        self._db_last_mtime_ns = self._get_db_mtime_ns()
+        self._tab_refresh_tokens = {"On this day": -1, "Collection": -1, "Randomiser": -1}
 
         on_this_day_tab = self.create_on_this_day_tab()
         tab_widget.addTab(on_this_day_tab, "On this day")
@@ -523,8 +570,7 @@ class CollectionViewer(QMainWindow):
         self.tab_widget = tab_widget  # Store reference for later
 
         def handle_tab_changed(idx):
-            if self.tab_widget.tabText(idx) == "On this day" and self.populate_on_this_day_table_fn:
-                self.populate_on_this_day_table_fn()
+            self.maybe_refresh_watched_tab(self.tab_widget.tabText(idx))
             # Reset Escape to default when switching tabs to avoid stale handlers
             self.reset_escape_handler()
         tab_widget.currentChanged.connect(handle_tab_changed)
@@ -897,6 +943,7 @@ class CollectionViewer(QMainWindow):
 
         # Initial population
         populate_on_this_day_table()
+        self._tab_refresh_tokens["On this day"] = self._db_change_token
         # Store for refresh_views
         self.populate_on_this_day_table_fn = populate_on_this_day_table
         return widget
@@ -958,6 +1005,7 @@ class CollectionViewer(QMainWindow):
 
         def back_to_list():
             stack.setCurrentWidget(list_page)
+            QTimer.singleShot(0, restore_collection_table_layout)
             self.reset_escape_handler()
 
         detail_page, self.collection_detail_widget, self.collection_image_label = self.build_detail_page(back_to_list)
@@ -982,7 +1030,7 @@ class CollectionViewer(QMainWindow):
         # Track last filter values to avoid redundant refreshes
         last_filter_values = None
 
-        def populate_table():
+        def populate_table(force=False):
             nonlocal resize_done, last_filter_values
             storage_format_case = self.storage_format_case_sql("d")
             current_filters = {
@@ -992,7 +1040,7 @@ class CollectionViewer(QMainWindow):
                 "year_from": year_from_input.text(),
                 "year_to": year_to_input.text()
             }
-            if last_filter_values is not None and current_filters == last_filter_values:
+            if not force and last_filter_values is not None and current_filters == last_filter_values:
                 return  # No real change, skip repopulating
             last_filter_values = current_filters
             resize_done = False
@@ -1149,6 +1197,15 @@ class CollectionViewer(QMainWindow):
             scrollbar = table.verticalScrollBar()
             scrollbar.valueChanged.connect(load_visible_thumbnails)
 
+        def restore_collection_table_layout():
+            # Returning from detail view can occasionally leave row heights compressed.
+            table.verticalHeader().setDefaultSectionSize(110)
+            for row in range(table.rowCount()):
+                table.setRowHeight(row, 110)
+            load_visible_thumbnails()
+            table.resizeColumnsToContents()
+            table.viewport().update()
+
         # Define double-click handler for detail view
         def on_table_double_click(row, column, table):
             discogs_id_item = table.item(row, 3)
@@ -1179,7 +1236,10 @@ class CollectionViewer(QMainWindow):
         clear_button.clicked.connect(clear_filters)
 
         # Connect scrollbar after widget is shown and table is created
-        QTimer.singleShot(500, populate_table)
+        def initial_populate():
+            populate_table(force=True)
+            self._tab_refresh_tokens["Collection"] = self._db_change_token
+        QTimer.singleShot(500, initial_populate)
         QTimer.singleShot(600, connect_scrollbar)
         # Store the populate function for refresh_views
         self.populate_collection_table_fn = populate_table
@@ -1375,6 +1435,8 @@ class CollectionViewer(QMainWindow):
         r_clear_button.clicked.connect(r_clear_filters)
 
         load_random_item()
+        self.populate_randomiser_fn = load_random_item
+        self._tab_refresh_tokens["Randomiser"] = self._db_change_token
         return widget
 
     def create_discogs_importer_tab(self):
@@ -1440,7 +1502,7 @@ class CollectionViewer(QMainWindow):
                 import_button.setStyleSheet(get_default_button_stylesheet())
                 enable_tabs_and_escape()
             worker.finished.connect(restore_import_button)
-            worker.finished.connect(self.refresh_views)
+            worker.finished.connect(self.mark_database_changed)
 
             self.import_thread.started.connect(worker.run)
             self.import_thread.start()
@@ -1595,7 +1657,7 @@ class CollectionViewer(QMainWindow):
                     match_button.setStyleSheet(get_default_button_stylesheet())
                 worker.finished.connect(restore_button)
                 worker.finished.connect(enable_tabs_and_escape)
-                worker.finished.connect(self.refresh_views)
+                worker.finished.connect(self.mark_database_changed)
 
                 self.mb_thread.started.connect(worker.run)
                 self.mb_thread.start()
