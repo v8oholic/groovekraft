@@ -82,7 +82,7 @@ class ReleaseDetailWidget(QWidget):
         outer_layout.addWidget(group)
 
         for field in ['Artist', 'Title', 'Format', 'Country', 'Release Date',
-                      'Discogs Id', 'Catalog Numbers', 'Barcodes', 'Matched', 'Last Cleaned', 'Play Count', 'Last Played']:
+                      'Discogs Id', 'Catalog Numbers', 'Barcodes', 'Matched', 'Clean Count', 'Last Cleaned', 'Play Count', 'Last Played']:
             label_widget = QLabel(f"{field}:")
             font = label_widget.font()
             font.setBold(True)
@@ -130,7 +130,7 @@ class ReleaseDetailWidget(QWidget):
                 continue
             if key == 'Matched':
                 self.labels[key].setText("Yes" if value else "No")
-            elif key == 'Play Count':
+            elif key in {'Play Count', 'Clean Count'}:
                 self.labels[key].setText(str(value) if value is not None else "0")
             elif key == 'Last Played':
                 self.labels[key].setText(value if value else "Never")
@@ -386,7 +386,7 @@ class CollectionViewer(QMainWindow):
         with context_manager(self.cfg.db_path) as cur:
             cur.execute("""
                 SELECT artist, title, format, country, release_date, release_date_locked, discogs_id,
-                       catnos, barcodes, play_count, last_played, last_cleaned
+                       catnos, barcodes, play_count, last_played, clean_count, last_cleaned
                 FROM discogs_releases
                 WHERE discogs_id = ?
             """, (discogs_id,))
@@ -411,6 +411,7 @@ class CollectionViewer(QMainWindow):
             'Catalog Numbers': release.catnos,
             'Barcodes': release.barcodes,
             'Matched': matched,
+            'Clean Count': getattr(release, "clean_count", 0) or 0,
             'Last Cleaned': getattr(release, "last_cleaned", None),
             'Play Count': getattr(release, "play_count", 0) or 0,
             'Last Played': getattr(release, "last_played", None)

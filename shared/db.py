@@ -36,6 +36,7 @@ CREATE_DISCOGS_RELEASES_TABLE = """
         primary_image_uri TEXT,
         play_count INTEGER DEFAULT 0,
         last_played TEXT,
+        clean_count INTEGER DEFAULT 0,
         last_cleaned TEXT,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
         release_date_locked INTEGER DEFAULT 0
@@ -164,6 +165,15 @@ def migrate_add_clean_stats(db_path):
         columns = [row[1] for row in cur.fetchall()]
         if "last_cleaned" not in columns:
             cur.execute("ALTER TABLE discogs_releases ADD COLUMN last_cleaned TEXT;")
+        if "clean_count" not in columns:
+            cur.execute("ALTER TABLE discogs_releases ADD COLUMN clean_count INTEGER DEFAULT 0;")
+            cur.execute("""
+                UPDATE discogs_releases
+                SET clean_count = CASE
+                    WHEN last_cleaned IS NOT NULL AND TRIM(last_cleaned) != '' THEN 1
+                    ELSE 0
+                END
+            """)
 
 
 def increment_play_stats(db_path: str, discogs_id: int):
@@ -184,15 +194,16 @@ def increment_play_stats(db_path: str, discogs_id: int):
 
 
 def set_last_cleaned(db_path: str, discogs_id: int):
-    """Stamp last_cleaned for a release."""
+    """Increment clean_count and stamp last_cleaned for a release."""
     with context_manager(db_path) as cur:
         cur.execute("""
             UPDATE discogs_releases
-            SET last_cleaned = CURRENT_TIMESTAMP
+            SET clean_count = COALESCE(clean_count, 0) + 1,
+                last_cleaned = CURRENT_TIMESTAMP
             WHERE discogs_id = ?
         """, (discogs_id,))
         cur.execute("""
-            SELECT last_cleaned
+            SELECT clean_count, last_cleaned
             FROM discogs_releases
             WHERE discogs_id = ?
         """, (discogs_id,))
