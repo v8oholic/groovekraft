@@ -29,10 +29,9 @@
 # arguments may be specified.
 
 APP_PYTHON=/opt/homebrew/Caskroom/miniforge/base/envs/groovekraft/bin/python
-APP_MAIN="$HOME/Applications/Python/GrooveKraft/groovekraft.py"
-
-# Determine application directory from APP_MAIN
-APP_DIR=$(dirname "$APP_MAIN")
+SCRIPT_PATH=${0:A}
+APP_DIR=${SCRIPT_PATH:h}
+APP_MAIN="$APP_DIR/groovekraft.py"
 
 # Save current directory
 OLD_DIR=$(pwd)
@@ -44,7 +43,6 @@ trap 'cd "$OLD_DIR"' EXIT
 if [[ "$1" == "--publish" ]]; then
   echo "Publishing groovekraft to ~/bin/groovekraft..."
   mkdir -p ~/bin
-  SCRIPT_PATH=$(realpath "$0")
   chmod +x "$SCRIPT_PATH"
   ln -sf "$SCRIPT_PATH" ~/bin/groovekraft
   echo "Symlink created: ~/bin/groovekraft -> $SCRIPT_PATH"
@@ -102,4 +100,4 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   exit 0
 fi
 
-$APP_PYTHON "$APP_MAIN" "$@"
+"$APP_PYTHON" "$APP_MAIN" "$@"
