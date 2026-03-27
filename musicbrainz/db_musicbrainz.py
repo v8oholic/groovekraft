@@ -6,6 +6,10 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 
+def _looks_like_legacy_hash(value):
+    return bool(value) and len(value) == 64 and all(ch in "0123456789abcdef" for ch in value.lower())
+
+
 def delete_match(db_path, discogs_id, callback=print):
     with context_manager(db_path) as cur:
         cur.execute("""
@@ -108,6 +112,15 @@ def set_credentials(db_path, username, password):
 
 
 def get_credentials(db_path):
+    with context_manager(db_path) as cur:
+        cur.execute("SELECT username, password FROM mb_credentials LIMIT 1")
+        row = cur.fetchone()
+    if row and _looks_like_legacy_hash(row.password):
+        return None
+    return row
+
+
+def get_stored_credential_row(db_path):
     with context_manager(db_path) as cur:
         cur.execute("SELECT username, password FROM mb_credentials LIMIT 1")
         return cur.fetchone()

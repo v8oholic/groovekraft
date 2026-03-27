@@ -5,6 +5,7 @@
 import errno
 import logging
 import socket
+import threading
 import time
 import urllib.error
 from http.client import RemoteDisconnected
@@ -44,6 +45,9 @@ DEFAULT_MB_MAX_RETRIES = 4
 DEFAULT_MB_INITIAL_DELAY = 0.5
 DEFAULT_MB_BACKOFF_FACTOR = 2.0
 DEFAULT_MB_MAX_SLEEP = 8.0
+MIN_DISAMBIGUATION_CANDIDATES = 25
+MAX_DISAMBIGUATION_CANDIDATES = 60
+DISAMBIGUATION_SCORE_WINDOW = 8
 
 MB_NETWORK_ERROR = getattr(musicbrainzngs.musicbrainz, "NetworkError", None)
 MB_RESPONSE_ERROR = getattr(musicbrainzngs.musicbrainz, "ResponseError", None)
@@ -861,8 +865,10 @@ def mb_find_release_group_releases(artist=None, title=None, country=None, format
     batch_size = 25
     max_results = 100
     candidates = []
+    groups_processed = 0
 
     while len(all_results) < max_results:
+        callback(f"🔎 Discogs {discogs_id}: release-group search batch offset {offset}")
 
         result = _mb_call(
             musicbrainzngs.search_release_groups,
@@ -875,10 +881,16 @@ def mb_find_release_group_releases(artist=None, title=None, country=None, format
         # Add new results
         release_group_list = result.get('release-group-list', [])
         all_results.extend(release_group_list)
+        callback(f"🔎 Discogs {discogs_id}: found {len(release_group_list)} release groups in this batch")
 
         if release_group_list:
             # search this batch of release groups
-            for group in release_group_list:
+            for group_index, group in enumerate(release_group_list, start=1):
+                groups_processed += 1
+                callback(
+                    f"🔎 Discogs {discogs_id}: loading release group {groups_processed} "
+                    f"(batch item {group_index}/{len(release_group_list)})"
+                )
                 # fetch the release group including releases - note
                 gr = _mb_call(
                     musicbrainzngs.get_release_group_by_id,
@@ -1037,7 +1049,7 @@ def match_release_in_musicbrainz(db_path, discogs_id, callback=print):
     barcodes = row.barcodes
     _, primary_type, format, secondary_format = mb_normalize_format(row.format)
 
-    # try the Discogs release link first
+    callback(f"🔎 Discogs {discogs_id}: checking direct Discogs release link")
     candidates = mb_browse_releases_by_discogs_release_link(
         discogs_id=discogs_id, callback=callback)
 
@@ -1066,18 +1078,25 @@ def match_release_in_musicbrainz(db_path, discogs_id, callback=print):
             callback=callback)
 
     if row.master_id:
+        callback(f"🔎 Discogs {discogs_id}: checking Discogs master link")
         # try the master release to release group link
         candidates = add_candidates(
             candidates, match_by_discogs_master_link(master_id=row.master_id))
 
     # try some other searches
+    if barcodes:
+        callback(f"🔎 Discogs {discogs_id}: searching MusicBrainz by barcode")
     candidates = add_candidates(candidates, mb_match_barcodes(barcodes=barcodes))
+    if catnos:
+        callback(f"🔎 Discogs {discogs_id}: searching MusicBrainz by catalog number")
     candidates = add_candidates(candidates, mb_match_catnos(catnos=catnos))
+    callback(f"🔎 Discogs {discogs_id}: searching MusicBrainz by artist/title")
     candidates = add_candidates(candidates, mb_find_release_group_releases(
         artist=artist,
         title=title,
         primary_type=primary_type))
 
+    callback(f"🔎 Discogs {discogs_id}: disambiguating {len(candidates)} candidate releases")
     mb_release_group, mb_release, best_match_score = disambiguate_releases(
         candidates,
         artist=artist,
@@ -1149,6 +1168,7 @@ def disambiguate_releases(
         catnos=None,
         barcodes=None):
 
+    candidates = shortlist_candidates(candidates, artist=artist, title=title)
     best_match_score = 0
     best_match_release = None
 
@@ -1175,6 +1195,30 @@ def disambiguate_releases(
     mb_release_group, mb_release = get_release_and_release_group(mbid=best_match_release.get('id'))
 
     return mb_release_group, mb_release, best_match_score
+
+
+def shortlist_candidates(candidates, artist=None, title=None):
+    scored = []
+    for release in candidates:
+        release_artist = release.get('artist-credit-phrase') or ""
+        release_title = release.get('title') or ""
+        lightweight_score = fuzzy_match(artist, release_artist, 'artist') + fuzzy_match(title, release_title, 'title')
+        scored.append((lightweight_score, release))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    if len(scored) <= MIN_DISAMBIGUATION_CANDIDATES:
+        return [release for _, release in scored]
+
+    best_score = scored[0][0]
+    shortlisted = [
+        release for score, release in scored
+        if score >= best_score - DISAMBIGUATION_SCORE_WINDOW
+    ]
+
+    if len(shortlisted) < MIN_DISAMBIGUATION_CANDIDATES:
+        shortlisted = [release for _, release in scored[:MIN_DISAMBIGUATION_CANDIDATES]]
+
+    return shortlisted[:MAX_DISAMBIGUATION_CANDIDATES]
 
 
 def update_tables_after_match(db_path, discogs_id, mb_release=None, mb_release_group=None, best_match_score=0, callback=print):
@@ -1298,9 +1342,6 @@ def match_discogs_against_mb(db_path, callback=print, should_cancel=lambda: Fals
             callback("❌ Match cancelled.")
             return
 
-        percent = int((index / total_rows) * 100)
-        progress_callback(percent)
-
         mb_row = db_musicbrainz.fetch_row(db_path, row.discogs_id) if not match_all else None
 
         match_row = (
@@ -1312,6 +1353,7 @@ def match_discogs_against_mb(db_path, callback=print, should_cancel=lambda: Fals
         )
 
         if not match_row:
+            progress_callback(int((index / total_rows) * 100))
             continue
 
         matches_attempted += 1
@@ -1324,10 +1366,26 @@ def match_discogs_against_mb(db_path, callback=print, should_cancel=lambda: Fals
         )
         callback(f'⚙️ {index}/{total_rows} {db_summarise_row(db_path,row.discogs_id)} ({status})')
 
-        if match_release_in_musicbrainz(db_path, row.discogs_id, callback=callback):
-            matches_succeeded += 1
+        row_done = threading.Event()
+
+        def warn_if_slow():
+            elapsed = 30
+            while not row_done.wait(elapsed):
+                callback(f"⏳ Still working on Discogs {row.discogs_id} after {elapsed}s")
+                elapsed += 30
+
+        slow_row_thread = threading.Thread(target=warn_if_slow, daemon=True)
+        slow_row_thread.start()
+        try:
+            if match_release_in_musicbrainz(db_path, row.discogs_id, callback=callback):
+                matches_succeeded += 1
+        finally:
+            row_done.set()
+
+        progress_callback(int((index / total_rows) * 100))
 
     callback(f'🏁 {matches_attempted} matches attempted, {matches_succeeded} succeeded.')
+    progress_callback(100)
 
 
 def mb_get_artist(artist, callback=print):

@@ -2,9 +2,10 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QComboBox, QDialogB
 from shared.utils import is_today_anniversary, is_month_anniversary, parse_and_humanize_date, humanize_date_delta
 from shared.db import context_manager, increment_play_stats, set_last_cleaned
 import musicbrainz.db_musicbrainz as db_musicbrainz
-from shared.config import AppConfig, GROOVEKRAFT_USER_AGENT, GROOVEKRAFT_VERSION
+from shared.config import AppConfig
+from shared.services import GrooveKraftService
+from shared.workflows import run_discogs_import, run_musicbrainz_match
 from musicbrainz import mb_matcher, mb_auth_gui
-from discogs import discogs_importer
 from PyQt6.QtWidgets import (
     QApplication, QLabel, QWidget, QVBoxLayout, QMainWindow, QTabWidget, QTextEdit, QTableWidget, QTableWidgetItem,
     QLineEdit, QHBoxLayout, QPushButton, QFormLayout, QGroupBox, QProgressBar, QDialog, QCheckBox, QStackedWidget,
@@ -29,9 +30,7 @@ except Exception:
     # If certifi is missing, we proceed; connections may fail on systems without system CA store
     pass
 
-import musicbrainzngs
 import sys
-from types import SimpleNamespace
 
 # Helper function to check if running under debugger
 
@@ -383,42 +382,28 @@ class CollectionViewer(QMainWindow):
         return page, detail_widget, image_label
 
     def get_release_detail(self, discogs_id):
-        with context_manager(self.cfg.db_path) as cur:
-            cur.execute("""
-                SELECT artist, title, format, country, release_date, release_date_locked, discogs_id,
-                       catnos, barcodes, play_count, last_played, clean_count, last_cleaned
-                FROM discogs_releases
-                WHERE discogs_id = ?
-            """, (discogs_id,))
-            release = cur.fetchone()
-
-        if not release:
+        detail = self.service.get_release_detail(discogs_id)
+        if not detail:
             return None
 
-        mb_row = db_musicbrainz.fetch_row(self.cfg.db_path, discogs_id=discogs_id)
-        matched = bool(mb_row and mb_row.mbid)
-
-        release_human = parse_and_humanize_date(release.release_date)
-        locked = bool(getattr(release, "release_date_locked", 0))
+        locked = detail["release_date_locked"]
         data = {
-            'Artist': release.artist,
-            'Title': release.title,
-            'Format': release.format,
-            'Country': release.country,
-            'Release Date': f"{release_human} {'🔒' if locked else ''}".strip(),
+            'Artist': detail["artist"],
+            'Title': detail["title"],
+            'Format': detail["format"],
+            'Country': detail["country"],
+            'Release Date': f'{detail["release_date_human"]} {"🔒" if locked else ""}'.strip(),
             'Release Date Tooltip': "Release date is locked; cannot be changed by import." if locked else "",
-            'Discogs Id': release.discogs_id,
-            'Catalog Numbers': release.catnos,
-            'Barcodes': release.barcodes,
-            'Matched': matched,
-            'Clean Count': getattr(release, "clean_count", 0) or 0,
-            'Last Cleaned': getattr(release, "last_cleaned", None),
-            'Play Count': getattr(release, "play_count", 0) or 0,
-            'Last Played': getattr(release, "last_played", None)
+            'Discogs Id': detail["discogs_id"],
+            'Catalog Numbers': detail["catnos"],
+            'Barcodes': detail["barcodes"],
+            'Matched': detail["matched"],
+            'Clean Count': detail["clean_count"],
+            'Last Cleaned': detail["last_cleaned"],
+            'Play Count': detail["play_count"],
+            'Last Played': detail["last_played"],
         }
-
-        image_path = os.path.join(self.cfg.images_folder, f"{discogs_id}.jpg")
-        return data, image_path
+        return data, detail["image_path"]
 
     def show_release_detail(self, discogs_id, detail_widget, image_label=None):
         details = self.get_release_detail(discogs_id)
@@ -491,25 +476,15 @@ class CollectionViewer(QMainWindow):
 
     @staticmethod
     def storage_format_case_sql(alias="d"):
-        normalized = f"LOWER(REPLACE(REPLACE({alias}.format, '”', '\"'), '“', '\"'))"
-        return (
-            "CASE "
-            f"WHEN {normalized} LIKE '%cd%' THEN 'Compact Disc' "
-            f"WHEN {normalized} LIKE '%box set%' AND {normalized} LIKE '%vinyl%' THEN '12\" vinyl' "
-            f"WHEN {normalized} LIKE '%box set%' THEN 'Compact Disc' "
-            f"WHEN {normalized} LIKE '%vinyl%' AND ({normalized} LIKE '%7\"%' OR {normalized} LIKE '%7 inch%') THEN '7\" vinyl' "
-            f"WHEN {normalized} LIKE '%vinyl%' THEN '12\" vinyl' "
-            "ELSE NULL END"
-        )
+        return GrooveKraftService.storage_format_case_sql(alias)
 
     class DiscogsImportWorker(QObject):
         progress_msg = pyqtSignal(str)
         finished = pyqtSignal()
         progress = pyqtSignal(int)
 
-        def __init__(self, client, cfg):
+        def __init__(self, cfg):
             super().__init__()
-            self.client = client
             self.cfg = cfg
             self._cancel_requested = False
 
@@ -517,15 +492,10 @@ class CollectionViewer(QMainWindow):
             self._cancel_requested = True
 
         def run(self):
-            def emit_msg(msg):
-                self.progress_msg.emit(msg)
-
-            from discogs import discogs_importer
             try:
-                discogs_importer.import_from_discogs(
-                    discogs_client=self.client,
+                run_discogs_import(
                     cfg=self.cfg,
-                    callback=emit_msg,
+                    callback=self.progress_msg.emit,
                     should_cancel=lambda: self._cancel_requested,
                     progress_callback=lambda pct: self.progress.emit(pct)
                 )
@@ -536,6 +506,7 @@ class CollectionViewer(QMainWindow):
     def __init__(self, cfg: AppConfig):
         super().__init__()
         self.cfg = cfg
+        self.service = GrooveKraftService(cfg)
         self.setWindowTitle(f"{self.cfg.app_name} v{self.cfg.app_version}")
         if not hasattr(self.cfg, "images_folder"):
             self.cfg.images_folder = os.path.join(self.cfg.root_folder, "images")
@@ -1477,16 +1448,10 @@ class CollectionViewer(QMainWindow):
 
         def run_import():
             log_output.clear()
-            try:
-                client, access_token, access_secret = discogs_importer.connect_to_discogs(
-                    self.cfg.db_path)
-            except Exception as e:
-                log_output.append(f"Authentication failed: {e}")
-                return
 
             import_button.setText("Cancel Import")
 
-            worker = CollectionViewer.DiscogsImportWorker(client, self.cfg)
+            worker = CollectionViewer.DiscogsImportWorker(self.cfg)
             self.worker = worker  # keep reference
             self.import_thread = QThread()
             worker.moveToThread(self.import_thread)
@@ -1572,11 +1537,13 @@ class CollectionViewer(QMainWindow):
             progress = pyqtSignal(int)
             finished = pyqtSignal()
 
-            def __init__(self, cfg):
+            def __init__(self, cfg, username, password):
                 super().__init__()
                 self.cfg = cfg
+                self.username = username
+                self.password = password
                 self._cancel_requested = False
-                self.match_all = cfg.match_all
+                self.match_all = False
 
             def cancel(self):
                 self._cancel_requested = True
@@ -1592,17 +1559,14 @@ class CollectionViewer(QMainWindow):
                         pass
 
                 try:
-                    musicbrainzngs.set_useragent(
-                        app=GROOVEKRAFT_USER_AGENT, version=GROOVEKRAFT_VERSION)
-                    musicbrainzngs.auth(self.cfg.username, self.cfg.password)
-                    musicbrainzngs.set_rate_limit(1, 1)
-
-                    mb_matcher.match_discogs_against_mb(
-                        self.cfg.db_path,
+                    run_musicbrainz_match(
+                        cfg=self.cfg,
+                        username=self.username,
+                        password=self.password,
+                        match_all=self.match_all,
                         callback=self.progress_msg.emit,
                         should_cancel=lambda: self._cancel_requested,
                         progress_callback=lambda pct: self.progress.emit(pct),
-                        match_all=self.match_all
                     )
                 except Exception as e:
                     self.progress_msg.emit(f"Error: {e}")
@@ -1614,32 +1578,13 @@ class CollectionViewer(QMainWindow):
 
             if match_button.text() == import_button_label:
                 log_output.clear()
-                creds = db_musicbrainz.get_credentials(self.cfg.db_path)
-                if creds:
-                    username, password = creds
-                    try:
-                        musicbrainzngs.set_useragent(
-                            app=GROOVEKRAFT_USER_AGENT,
-                            version=GROOVEKRAFT_VERSION)
-                        musicbrainzngs.auth(username, password)
-                    except Exception:
-                        creds = None
+                dlg = mb_auth_gui.MBAuthDialog()
+                if dlg.exec() != QDialog.DialogCode.Accepted:
+                    return
 
-                if not creds:
-                    dlg = mb_auth_gui.MBAuthDialog()
-                    if dlg.exec() == QDialog.DialogCode.Accepted:
-                        username, password = dlg.get_credentials()
-                        db_musicbrainz.set_credentials(self.cfg.db_path, username, password)
-                    else:
-                        return
-
-                cfg = SimpleNamespace()
-                cfg.db_path = self.cfg.db_path
-                cfg.username = username
-                cfg.password = password
-                cfg.match_all = match_all_checkbox.isChecked()
-
-                worker = MBMatcherWorker(cfg)
+                username, password = dlg.get_credentials()
+                worker = MBMatcherWorker(self.cfg, username, password)
+                worker.match_all = match_all_checkbox.isChecked()
                 self.mb_worker = worker
 
                 # Always use QThread, signals, and GUI updates (no is_debugging() branch)

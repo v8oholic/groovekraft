@@ -5,15 +5,49 @@
 from functools import wraps
 import time
 import datetime
+import calendar
 import re
 import logging
 import json
 
-import dateparser
-import dateutil
-
-
 logger = logging.getLogger(__name__)
+
+
+def _parse_supported_date(date_str):
+    if date_str in (None, "", "0"):
+        return None
+
+    value = str(date_str).strip()
+    try:
+        if len(value) == 10:
+            return datetime.datetime.strptime(value, "%Y-%m-%d").date()
+        if len(value) == 7:
+            year, month = map(int, value.split("-"))
+            return datetime.date(year, month, 1)
+        if len(value) == 4:
+            return datetime.date(int(value), 1, 1)
+    except ValueError:
+        return None
+
+    return None
+
+
+def _calendar_delta(start_date, end_date):
+    years = end_date.year - start_date.year
+    months = end_date.month - start_date.month
+    days = end_date.day - start_date.day
+
+    if days < 0:
+        months -= 1
+        prev_month = end_date.month - 1 or 12
+        prev_year = end_date.year if end_date.month > 1 else end_date.year - 1
+        days += calendar.monthrange(prev_year, prev_month)[1]
+
+    if months < 0:
+        years -= 1
+        months += 12
+
+    return years, months, days
 
 
 def timed(func):
@@ -214,25 +248,15 @@ def convert_country_from_discogs_to_musicbrainz(discogs_country):
 
 
 def parse_date(date_str):
-    if date_str == '0':
-        return None
-
     if date_str and not isinstance(date_str, str):
         date_str = str(date_str)
 
-    date_formats = ['%Y-%m-%d', '%Y-%m', '%Y']
-    settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first'}
-
-    if date_str is None or date_str == '':
-        return None
-
-    date_object = dateparser.parse(date_str, date_formats=date_formats, settings=settings)
-
+    date_object = _parse_supported_date(date_str)
     if not date_object:
         logger.warning(f"Could not parse date: {date_str}")
         return None
 
-    return date_object.date()
+    return date_object
 
 
 def earliest_date(dt1_str, dt2_str):
@@ -265,23 +289,16 @@ def pluralize(count, singular, plural=None):
 def parse_and_humanize_date(ymd_date):
     if not ymd_date:
         return ''
-
-    strategies = [
-        {"length": 10, "format": "%Y-%m-%d",
-            "parts": ['day', 'month', 'year'], "output": "%A %-d %B %Y"},
-        {"length": 7,  "format": "%Y-%m",    "parts": ['month', 'year'],        "output": "%B %Y"},
-        {"length": 4,  "format": "%Y",       "parts": ['year'],                 "output": "%Y"},
-    ]
-
-    for strat in strategies:
-        if len(ymd_date) == strat["length"]:
-            settings = {"REQUIRE_PARTS": strat["parts"]}
-            date_object = dateparser.parse(ymd_date, date_formats=[
-                                           strat["format"]], settings=settings)
-            if date_object:
-                return date_object.strftime(strat["output"])
-
-    return ''
+    date_object = _parse_supported_date(ymd_date)
+    if not date_object:
+        return ''
+    if len(ymd_date) == 10:
+        return date_object.strftime("%A %-d %B %Y")
+    if len(ymd_date) == 7:
+        return date_object.strftime("%B %Y")
+    if len(ymd_date) == 4:
+        return date_object.strftime("%Y")
+    return ""
 
 
 def humanize_date_delta(dt1, dt2=datetime.date.today()):
@@ -301,26 +318,32 @@ def humanize_date_delta(dt1, dt2=datetime.date.today()):
     if not dt1:
         return ''
 
-    date_formats = ['%Y-%m-%d', '%Y-%m', '%Y']
-    settings = {'PREFER_DAY_OF_MONTH': 'first', 'PREFER_MONTH_OF_YEAR': 'first'}
-
     dt2_object = dt2
-    dt1_object = dateparser.parse(dt1, date_formats=date_formats, settings=settings)
+    dt1_object = _parse_supported_date(dt1)
 
     if not dt1_object:
         return ''
 
-    dt1_object = dt1_object.date()
-    rd = dateutil.relativedelta.relativedelta(dt2_object, dt1_object)
+    years, months, days = _calendar_delta(dt1_object, dt2_object)
 
     if len(dt1) == 4:
-        parts = build_parts(rd, ['years'])
+        parts = [pluralize(years, 'year')] if years else []
         suffix = 'ago this year'
     elif len(dt1) == 7:
-        parts = build_parts(rd, ['years', 'months'])
+        parts = []
+        if years:
+            parts.append(pluralize(years, 'year'))
+        if months:
+            parts.append(pluralize(months, 'month'))
         suffix = 'ago this month'
     else:
-        parts = build_parts(rd, ['years', 'months', 'days'])
+        parts = []
+        if years:
+            parts.append(pluralize(years, 'year'))
+        if months:
+            parts.append(pluralize(months, 'month'))
+        if days:
+            parts.append(pluralize(days, 'day'))
         suffix = 'ago'
 
     if not parts:

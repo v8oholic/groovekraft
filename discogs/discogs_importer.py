@@ -18,7 +18,6 @@ from discogs.db_discogs import (
     set_sort_name, insert_row, set_primary_image_uri, get_all_discogs_ids, fetch_all_rows, delete_discogs_release_row
 )
 from shared.utils import trim_if_ends_with_number_in_brackets, sanitise_identifier, normalize_country_name, earliest_date
-from discogs.discogs_oauth_gui import prompt_oauth_verifier_gui
 from shared.config import DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET, GROOVEKRAFT_USER_AGENT
 import logging
 from shared.config import AppConfig
@@ -26,8 +25,35 @@ from shared.config import AppConfig
 logger = logging.getLogger(__name__)
 
 
-def connect_to_discogs(db_path):
+def _build_authenticated_client(oauth_token, oauth_token_secret):
+    client = discogs_client.Client(
+        GROOVEKRAFT_USER_AGENT,
+        consumer_key=DISCOGS_CONSUMER_KEY,
+        consumer_secret=DISCOGS_CONSUMER_SECRET,
+        token=oauth_token,
+        secret=oauth_token_secret
+    )
+    client.per_page = 100
+    client.identity()
+    return client
 
+
+def begin_discogs_authorization():
+    client = discogs_client.Client(user_agent=GROOVEKRAFT_USER_AGENT)
+    client.per_page = 100
+    client.set_consumer_key(DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET)
+    token, secret, url = client.get_authorize_url()
+    return client, token, secret, url
+
+
+def complete_discogs_authorization(db_path, client, oauth_verifier):
+    access_token, access_secret = client.get_access_token(oauth_verifier)
+    set_oauth_tokens(db_path, access_token, access_secret)
+    authed_client = _build_authenticated_client(access_token, access_secret)
+    return authed_client, access_token, access_secret
+
+
+def connect_to_discogs(db_path, allow_gui_prompt=True):
     token_row = get_oauth_tokens(db_path)
     if token_row:
         oauth_token, oauth_token_secret = token_row
@@ -38,17 +64,7 @@ def connect_to_discogs(db_path):
 
     if oauth_token and oauth_token_secret:
         try:
-            client = discogs_client.Client(
-                GROOVEKRAFT_USER_AGENT,
-                consumer_key=DISCOGS_CONSUMER_KEY,
-                consumer_secret=DISCOGS_CONSUMER_SECRET,
-                token=oauth_token,
-                secret=oauth_token_secret
-            )
-            # Use the largest page size the API allows to minimise paginated requests
-            client.per_page = 100
-            # Attempt to validate the token immediately
-            client.identity()
+            client = _build_authenticated_client(oauth_token, oauth_token_secret)
             access_token = oauth_token
             access_secret = oauth_token_secret
             authenticated = True
@@ -60,24 +76,20 @@ def connect_to_discogs(db_path):
             authenticated = False
 
     if not authenticated:
-
-        # instantiate discogs_client object
-        client = discogs_client.Client(user_agent=GROOVEKRAFT_USER_AGENT)
-        client.per_page = 100
-
-        # prepare the client with our API consumer data
-        client.set_consumer_key(DISCOGS_CONSUMER_KEY, DISCOGS_CONSUMER_SECRET)
-        token, secret, url = client.get_authorize_url()
+        client, token, secret, url = begin_discogs_authorization()
 
         logger.debug(" == Request Token == ")
         logger.debug(f"    * oauth_token        = {token}")
         logger.debug(f"    * oauth_token_secret = {secret}")
         logger.debug(f"    * authorization URL  = {url}")
 
+        if not allow_gui_prompt:
+            raise RuntimeError("Discogs authorization required.")
+
         try:
+            from discogs.discogs_oauth_gui import prompt_oauth_verifier_gui
             oauth_verifier = prompt_oauth_verifier_gui(url)
-            access_token, access_secret = client.get_access_token(oauth_verifier)
-            set_oauth_tokens(db_path, access_token, access_secret)
+            client, access_token, access_secret = complete_discogs_authorization(db_path, client, oauth_verifier)
             authenticated = True
         except Exception as e:
             raise Exception(f"Unable to authenticate to Discogs: {e}")
