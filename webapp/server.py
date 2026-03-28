@@ -646,7 +646,7 @@ class GrooveKraftRequestHandler(BaseHTTPRequestHandler):
                     .checkbox-row {{ display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--ink); }}
                     .checkbox-row input[type="checkbox"] {{ width: 18px; height: 18px; margin: 0; flex: 0 0 auto; }}
                     .checkbox-row span {{ line-height: 1.3; }}
-                    .form-actions {{ display: flex; justify-content: center; margin-top: 4px; width: 100%; }}
+                    .form-actions {{ display: flex; justify-content: flex-start; margin-top: 4px; width: 100%; }}
                     .summary {{ color: var(--muted); margin: 0 0 18px; }}
                     .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }}
                     .card {{
